@@ -188,6 +188,52 @@
     margin-right: 8px;
 }
 
+.tf-model-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tf-model-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 6px;
+    color: #0f172a;
+    font-size: 11px;
+    font-weight: 800;
+    box-shadow: 0 2px 6px color-mix(in srgb, currentColor 30%, transparent);
+}
+
+.tf-model-bar {
+    position: relative;
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #ccc) 14%, transparent);
+    margin-top: 7px;
+    overflow: hidden;
+}
+
+.tf-model-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    opacity: 0.9;
+    transition: width 0.5s ease;
+    box-shadow: 0 0 8px color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.tf-model-bar-pct {
+    position: absolute;
+    right: 2px;
+    top: -9px;
+    font-size: 9px;
+    opacity: 0.55;
+}
+
 .tf-model-meta {
     font-size: 11px;
     opacity: 0.6;

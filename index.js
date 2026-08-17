@@ -25,18 +25,23 @@ const MODULE = 'token_flow';
 const GENERATE_ENDPOINT = '/api/backends/chat-completions/generate';
 const STREAM_DONE = '[DONE]';
 
+// 2026 最新旗舰定价（$/1M token，cached 为缓存输入价）
+// Kimi 官方为 CNY，已按 ~7.1 汇率折算为 USD 基准
 const PRESET_MODELS = [
-    { name: 'gpt-4o',             input: 2.50, output: 10.00, cached: 1.25,   perRequest: 0 },
-    { name: 'gpt-4o-mini',        input: 0.15, output: 0.60,  cached: 0.075,  perRequest: 0 },
-    { name: 'gpt-5',              input: 1.25, output: 10.00, cached: 0.625,  perRequest: 0 },
+    // OpenAI
+    { name: 'gpt-5.5',            input: 5.00, output: 30.00, cached: 2.50,   perRequest: 0 },
+    { name: 'gpt-5.4',            input: 2.50, output: 15.00, cached: 1.25,   perRequest: 0 },
+    // Google
+    { name: 'gemini-3.1-pro',     input: 2.00, output: 12.00, cached: 0.40,   perRequest: 0 },
+    // Anthropic
     { name: 'claude-opus-4.6',    input: 15.00, output: 75.00, cached: 1.50,  perRequest: 0 },
     { name: 'claude-sonnet-4.6',  input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
-    { name: 'gemini-3.1-pro',     input: 1.25, output: 10.00, cached: 0.10,   perRequest: 0 },
-    { name: 'deepseek-chat',      input: 0.27, output: 1.10,  cached: 0.07,   perRequest: 0 },
+    // DeepSeek
+    { name: 'deepseek-chat',      input: 0.14, output: 0.28,  cached: 0.07,   perRequest: 0 },
     { name: 'deepseek-reasoner',  input: 0.55, output: 2.19,  cached: 0.14,   perRequest: 0 },
-    { name: 'kimi-k2.6',          input: 1.00, output: 8.00,  cached: 0.10,   perRequest: 0 },
-    { name: 'qwen3.5-plus',       input: 0.80, output: 2.00,  cached: 0.10,   perRequest: 0 },
-    { name: 'mimo-v2.5-pro',      input: 3.00, output: 6.00,  cached: 0.025,  perRequest: 0 },
+    // Kimi (月之暗面)
+    { name: 'kimi-k3',            input: 2.80, output: 14.00, cached: 1.40,   perRequest: 0 },
+    { name: 'kimi-k2.6',          input: 0.92, output: 3.80,  cached: 0.46,   perRequest: 0 },
 ];
 
 const defaultSettings = {
@@ -48,6 +53,7 @@ const defaultSettings = {
     showOrb: true,
     orbPosition: null,
     models: structuredClone(PRESET_MODELS),
+    modelVersion: 20260817,
     stats: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     session: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     sessionStartedAt: Date.now(),
@@ -62,7 +68,13 @@ function getSettings() {
         if (s[key] === undefined) s[key] = structuredClone(defaultSettings[key]);
     }
     if (!Array.isArray(s.models)) s.models = structuredClone(PRESET_MODELS);
-    if (!s.stats || typeof s.stats !== 'object') s.stats = structuredClone(defaultSettings.stats);
+    // 预设价格表升级：内置版本比用户保存的新时，整体刷新为最新旗舰报价（剔除过时模型）
+    if ((s.modelVersion || 0) < (defaultSettings.modelVersion || 0)) {
+        s.models = structuredClone(PRESET_MODELS);
+        s.modelVersion = defaultSettings.modelVersion;
+        saveSettingsDebounced();
+    }
+if (!s.stats || typeof s.stats !== 'object') s.stats = structuredClone(defaultSettings.stats);
     if (!s.session || typeof s.session !== 'object') s.session = structuredClone(defaultSettings.session);
     if (!s.stats.models) s.stats.models = {};
     if (!s.session.models) s.session.models = {};
@@ -518,23 +530,33 @@ function updateDashboard() {
     grid.appendChild(statCard(safeT('会话费用'), fmtMoney(s, sessCost), s.displayCurrency));
     grid.appendChild(statCard(safeT('会话 Token'), fmtTokens(sessTokens), sessReq + ' ' + safeT('次请求')));
 
-    // 按模型明细
-    const modelKeys = Object.keys(total.models || {}).sort();
+// 按模型明细 —— 加入成本占比进度条 + 排名徽标
+    const modelKeys = Object.keys(total.models || {}).sort((a, b) =>
+        ((total.models[b] && total.models[b].cost) || 0) - ((total.models[a] && total.models[a].cost) || 0),
+    );
+    const costArr = modelKeys.map(k => (total.models[k] && total.models[k].cost) || 0);
+    const sumCost = costArr.reduce((x, y) => x + y, 0) || 1;
     if (modelKeys.length) {
         const tbl = document.createElement('div');
         tbl.className = 'tf-model-table';
         const title = document.createElement('div');
         title.className = 'tf-model-title';
-        title.textContent = safeT('模型明细');
+        title.textContent = safeT('模型明细') + ' · ' + safeT('按费用排序');
         tbl.appendChild(title);
-
-        for (const key of modelKeys) {
+        const palette = ['#5eead4', '#93c5fd', '#c4b5fd', '#fda4af', '#fcd34d', '#86efac', '#f9a8d4', '#a5b4fc'];
+        modelKeys.forEach((key, idx) => {
             const m = total.models[key];
-            if (!m) continue;
+            if (!m) return;
+            const share = (m.cost || 0) / sumCost;
             const row = document.createElement('div');
             row.className = 'tf-model-row';
-
             const left = document.createElement('div');
+            const topLine = document.createElement('div');
+            topLine.className = 'tf-model-top';
+            const rank = document.createElement('span');
+            rank.className = 'tf-model-rank';
+            rank.textContent = idx + 1;
+            rank.style.background = palette[idx % palette.length];
             const nameEl = document.createElement('span');
             nameEl.className = 'tf-model-name';
             nameEl.textContent = key;
@@ -542,18 +564,31 @@ function updateDashboard() {
             meta.className = 'tf-model-meta';
             const estMark = m.est > 0 ? ' · ' + safeT('含估算') : '';
             meta.textContent = `${fmtTokens(m.in + m.out + m.cached)} · ${m.req} ${safeT('次')}${estMark}`;
-            left.appendChild(nameEl);
-            left.appendChild(meta);
-
+            topLine.appendChild(rank);
+            topLine.appendChild(nameEl);
+            topLine.appendChild(meta);
+            const bar = document.createElement('div');
+            bar.className = 'tf-model-bar';
+            const fill = document.createElement('div');
+            fill.className = 'tf-model-bar-fill';
+            fill.style.width = Math.round(share * 100) + '%';
+            fill.style.background = palette[idx % palette.length];
+            const pct = document.createElement('span');
+            pct.className = 'tf-model-bar-pct';
+            pct.textContent = (share * 100).toFixed(share * 100 < 10 ? 1 : 0) + '%';
+            bar.appendChild(fill);
+            bar.appendChild(pct);
+            left.appendChild(topLine);
+            left.appendChild(bar);
             const right = document.createElement('div');
             right.className = 'tf-model-cost';
             right.textContent = fmtMoney(s, m.cost || 0);
-
             row.appendChild(left);
             row.appendChild(right);
             tbl.appendChild(row);
-        }
+        });
         grid.appendChild(tbl);
+    }
     }
 
     const started = document.createElement('div');
