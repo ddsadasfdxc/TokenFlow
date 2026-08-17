@@ -770,14 +770,12 @@ function initialize() {
         if (settings.trackExact) installFetchInterceptor();
 
         // 生成结束后刷新统计
-        if (eventSource && eventSource.on) {
-            const safeOn = (ev) => {
-                try { if (ev) eventSource.on(ev, safeUpdateUI); } catch (e) { console.warn('[TokenFlow] event bind error:', e); }
-            };
-            safeOn(event_types.GENERATION_ENDED);
-            safeOn(event_types.CHAT_CHANGED);
-            safeOn(event_types.MESSAGE_RECEIVED);
-        }
+        const safeOn = (ev) => {
+            try { if (ev && ev.length) eventSource.on(ev, safeUpdateUI); } catch (e) { console.warn('[TokenFlow] event bind error:', e); }
+        };
+        safeOn(event_types.GENERATION_ENDED);
+        safeOn(event_types.CHAT_CHANGED);
+        safeOn(event_types.MESSAGE_RECEIVED);
 
         console.log('[TokenFlow] initialized');
     } catch (e) {
