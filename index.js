@@ -572,38 +572,35 @@ function resetSessionStats() {
  * ============================================================ */
 
 function installSettingsEntry() {
-    // 避免重复注入
-    if (document.getElementById('token_flow_drawer')) return;
+    if (document.getElementById('token_flow_drawer')) return true;
 
     const host = document.querySelector('#extensions_settings2, #extensions_settings');
-    if (!host) return false;
+    if (!host) {
+        console.warn('[TokenFlow] settings container not found, will retry...');
+        return false;
+    }
+
+    console.log('[TokenFlow] injecting settings into', host.id);
 
     const entry = document.createElement('div');
     entry.id = 'token_flow_entry';
-    entry.className = 'tokenflow-settings-entry';
-    const drawer = document.createElement('div');
-    drawer.id = 'token_flow_drawer';
-    drawer.className = 'inline-drawer';
-    const toggle = document.createElement('div');
-    toggle.className = 'inline-drawer-toggle inline-drawer-header';
-    const b = document.createElement('b');
-    b.textContent = 'TokenFlow';
-    const icon = document.createElement('div');
-    icon.className = 'inline-drawer-icon fa-solid fa-circle-chevron-down down';
-    toggle.append(b, icon);
-    const content = document.createElement('div');
-    content.className = 'inline-drawer-content';
-    drawer.append(toggle, content);
-    entry.appendChild(drawer);
+    entry.innerHTML = `
+        <div class="inline-drawer" id="token_flow_drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b>TokenFlow</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            </div>
+            <div class="inline-drawer-content">
+                <div id="token_flow_dashboard"></div>
+                <div class="tokenflow-settings" id="token_flow_settings_inner"></div>
+            </div>
+        </div>
+    `;
     host.appendChild(entry);
 
-    // Dashboard 容器 + 设置面板
-    const dash = document.createElement('div');
-    dash.id = 'token_flow_dashboard';
-    content.appendChild(dash);
-    addExtensionSettingsInto(content);
-
+    addExtensionSettingsInto(document.getElementById('token_flow_settings_inner'));
     safeUpdateUI();
+    console.log('[TokenFlow] settings panel injected');
     return true;
 }
 
@@ -755,13 +752,23 @@ function initialize() {
     if (globalThis.__tokenFlowLoaded) return;
     globalThis.__tokenFlowLoaded = true;
 
+    console.log('[TokenFlow] initialize() called, readyState:', document.readyState);
+
     try {
         const settings = getSettings();
+        console.log('[TokenFlow] settings loaded:', { enabled: settings.enabled, trackExact: settings.trackExact });
 
         // 注入设置面板（带重试，等待扩展设置容器出现）
+        let retryCount = 0;
         const tryInject = () => {
             if (installSettingsEntry()) return;
             // 容器未就绪，稍后重试
+            retryCount++;
+            if (retryCount > 20) {
+                console.error('[TokenFlow] settings container not found after 20 retries, giving up');
+                return;
+            }
+            console.log('[TokenFlow] retrying injection...', retryCount);
             setTimeout(tryInject, 500);
         };
         tryInject();
@@ -777,7 +784,7 @@ function initialize() {
         safeOn(event_types.CHAT_CHANGED);
         safeOn(event_types.MESSAGE_RECEIVED);
 
-        console.log('[TokenFlow] initialized');
+        console.log('[TokenFlow] initialized successfully');
     } catch (e) {
         console.error('[TokenFlow] init error:', e);
     }
