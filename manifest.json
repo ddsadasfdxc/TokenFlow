@@ -1,0 +1,16 @@
+{
+    "display_name": "TokenFlow · 用量统计",
+    "loading_order": 500,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Operit",
+    "version": "1.0.0",
+    "homePage": "https://github.com/ddsadasfdxc/TokenFlow",
+    "auto_update": false,
+    "i18n": {
+        "zh-cn": "i18n/zh-cn.json",
+        "zh-tw": "i18n/zh-tw.json"
+    }
+}

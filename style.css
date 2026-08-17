@@ -1,0 +1,234 @@
+/* ============================================================
+ *  TokenFlow · Usage Analytics
+ *  统计面板 + 设置面板样式
+ * ============================================================ */
+
+/* ---------- 设置面板 ---------- */
+.tokenflow-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 2px;
+    width: 100%;
+    max-width: 640px;
+}
+
+.tf-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+}
+
+.tf-label {
+    font-size: 13px;
+    opacity: 0.85;
+    min-width: 110px;
+}
+
+.tokenflow-settings input[type="text"],
+.tokenflow-settings input[type="number"] {
+    width: 120px;
+    text-align: right;
+}
+
+.tf-price-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.tf-price-table th {
+    text-align: left;
+    padding: 4px 6px;
+    opacity: 0.6;
+    font-weight: 600;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+}
+
+.tf-price-table td {
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.15));
+}
+
+.tf-price-table .tf-name {
+    width: 150px;
+    text-align: left;
+}
+
+.tf-price-table .tf-num {
+    width: 80px;
+    min-width: 60px;
+}
+
+.tf-del {
+    background: transparent;
+    border: none;
+    color: var(--SmartThemeBodyColor, #ccc);
+    opacity: 0.5;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 2px 6px;
+}
+
+.tf-del:hover {
+    opacity: 1;
+    color: #e74c3c;
+}
+
+.tf-btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.tf-btn-row .menu_button {
+    font-size: 13px;
+    padding: 6px 14px;
+}
+
+/* ---------- 统计 Dashboard ---------- */
+#token_flow_dashboard {
+    min-height: 60px;
+}
+
+.tf-dash-muted {
+    opacity: 0.5;
+    font-size: 13px;
+    padding: 12px;
+    text-align: center;
+}
+
+.tf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+    padding: 6px 0;
+}
+
+.tf-stat-card {
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--SmartThemeBlurTintColor, #2c3e50) 85%, transparent),
+        color-mix(in srgb, var(--SmartThemeBlurTintColor, #1a252f) 55%, transparent));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.25));
+    border-radius: 14px;
+    padding: 14px 16px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tf-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.28);
+}
+
+.tf-stat-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.65;
+    margin-bottom: 6px;
+}
+
+.tf-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    background: linear-gradient(90deg, #5eead4, #93c5fd, #c4b5fd);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    word-break: break-all;
+}
+
+.tf-stat-sub {
+    font-size: 11px;
+    opacity: 0.6;
+    margin-top: 4px;
+}
+
+/* 模型明细表 */
+.tf-model-table {
+    grid-column: 1 / -1;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 70%, transparent);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    border-radius: 12px;
+    padding: 10px 14px;
+}
+
+.tf-model-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+
+.tf-model-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 4px;
+    border-bottom: 1px dashed rgba(128, 128, 128, 0.18);
+}
+
+.tf-model-row:last-child {
+    border-bottom: none;
+}
+
+.tf-model-name {
+    font-weight: 600;
+    font-size: 13px;
+    margin-right: 8px;
+}
+
+.tf-model-meta {
+    font-size: 11px;
+    opacity: 0.6;
+}
+
+.tf-model-cost {
+    font-weight: 700;
+    font-size: 14px;
+    background: linear-gradient(90deg, #fda4af, #fcd34d);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    white-space: nowrap;
+}
+
+.tf-session-start {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    opacity: 0.5;
+    text-align: right;
+    padding-top: 4px;
+}
+
+/* 适配窄屏 */
+@media (max-width: 768px) {
+    .tf-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+    }
+    .tf-stat-value {
+        font-size: 19px;
+    }
+    .tf-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .tf-label {
+        min-width: 0;
+    }
+    .tf-price-table {
+        font-size: 11px;
+    }
+}
