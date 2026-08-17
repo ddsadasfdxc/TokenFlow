@@ -551,7 +551,65 @@ function updateDashboard() {
     grid.appendChild(statCard(safeT('会话费用'), fmtMoney(s, sessCost), s.displayCurrency));
     grid.appendChild(statCard(safeT('会话 Token'), fmtTokens(sessTokens), sessReq + ' ' + safeT('次请求')));
 
-// 按模型明细 —— 加入成本占比进度条 + 排名徽标
+    // ============ 写作画像：字数 + 消息条数（实时统计当前聊天） ============
+    const chatArr = (() => { try { return getContext()?.chat || globalThis.chat || []; } catch { return []; } })();
+    let uChars = 0, cChars = 0, uMsgs = 0, cMsgs = 0;
+    const _strip = (t) => String(t || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, ' ');
+    if (Array.isArray(chatArr)) {
+        for (const msg of chatArr) {
+            if (!msg || typeof msg !== 'object') continue;
+            const isU = msg.is_user ? true : (msg.role === 'user');
+            const body = _strip(msg.mes || msg.content || '');
+            if (isU) { uChars += body.length; uMsgs++; }
+            else { cChars += body.length; cMsgs++; }
+        }
+    }
+    const allChars = uChars + cChars;
+    const allMsgs = uMsgs + cMsgs;
+    const classicBooks = [
+        { name: '《红楼梦》', chars: 730000 },
+        { name: '《三体》三部曲', chars: 900000 },
+        { name: '《三国演义》', chars: 640000 },
+        { name: '《活着》', chars: 120000 },
+        { name: '《百年孤独》', chars: 300000 },
+        { name: '《战争与和平》', chars: 1200000 },
+    ];
+    const theBook = classicBooks[Math.floor(Math.random() * classicBooks.length)];
+    const bookQty = allChars > 0 ? (allChars / theBook.chars).toFixed(allChars / theBook.chars < 10 ? 2 : 1) : '0';
+
+    const writingBlock = document.createElement('div');
+    writingBlock.className = 'tf-writing';
+    const wTitle = document.createElement('div');
+    wTitle.className = 'tf-writing-title';
+    wTitle.textContent = '✍ ' + safeT('写作画像');
+    const wGrid = document.createElement('div');
+    wGrid.className = 'tf-writing-grid';
+    const cell = (label, val, hint) => {
+        const d = document.createElement('div');
+        d.className = 'tf-writing-cell';
+        const v = document.createElement('div');
+        v.className = 'tf-writing-val';
+        v.textContent = val;
+        const l = document.createElement('div');
+        l.className = 'tf-writing-label';
+        l.textContent = label;
+        d.appendChild(v); d.appendChild(l);
+        if (hint) { const t = document.createElement('div'); t.className = 'tf-writing-hint'; t.textContent = hint; d.appendChild(t); }
+        return d;
+    };
+    wGrid.appendChild(cell(safeT('总字数'), allChars.toLocaleString(), safeT('约') + ' ' + allMsgs + ' ' + safeT('条消息')));
+    wGrid.appendChild(cell(safeT('User 字数'), uChars.toLocaleString(), safeT('共') + ' ' + uMsgs + ' ' + safeT('条')));
+    wGrid.appendChild(cell(safeT('角色字数'), cChars.toLocaleString(), safeT('共') + ' ' + cMsgs + ' ' + safeT('条')));
+    wGrid.appendChild(cell(safeT('总消息'), allMsgs.toLocaleString(), safeT('User') + ' ' + uMsgs + ' · ' + safeT('角色') + ' ' + cMsgs));
+    writingBlock.appendChild(wTitle);
+    writingBlock.appendChild(wGrid);
+    const wTip = document.createElement('div');
+    wTip.className = 'tf-writing-tip';
+    wTip.textContent = `🎯 ${allChars.toLocaleString()} ${safeT('字约相当于')} 【${theBook.name}】 ${bookQty} ${safeT('本')}`;
+    writingBlock.appendChild(wTip);
+    grid.appendChild(writingBlock);
+
+    // 按模型明细 —— 加入成本占比进度条 + 排名徽标
     const modelKeys = Object.keys(total.models || {}).sort((a, b) =>
         ((total.models[b] && total.models[b].cost) || 0) - ((total.models[a] && total.models[a].cost) || 0),
     );
