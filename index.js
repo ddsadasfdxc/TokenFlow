@@ -45,6 +45,8 @@ const defaultSettings = {
     useFallback: true,
     displayCurrency: '$',
     exchangeRate: 1,
+    showOrb: true,
+    orbPosition: null,
     models: structuredClone(PRESET_MODELS),
     stats: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     session: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
@@ -470,7 +472,8 @@ function addExtensionSettings() {
  * ============================================================ */
 
 function updateDashboard() {
-    const el = document.getElementById('token_flow_dashboard');
+    // 优先渲染到悬浮球弹层（主统计页），回退到设置面板内嵌容器
+    const el = document.getElementById('token_flow_panel_body') || document.getElementById('token_flow_dashboard');
     if (!el) return;
     const s = getSettings();
     if (!s.enabled) {
@@ -581,6 +584,152 @@ function resetSessionStats() {
 }
 
 /* ============================================================
+ *  悬浮球 + 统计弹层（对齐 world-backstage 的 orb 模式）
+ *  - 悬浮球固定在屏幕，可拖动 + 自动贴边 + 记忆位置
+ *  - 点击悬浮球展开/收起实时统计弹层
+ * ============================================================ */
+
+const ORB_SIZE = 56;
+let orbDragState = null;
+let orbSuppressClick = false;
+
+function ensureFloatingUI() {
+    if (document.getElementById('token_flow_orb')) return true;
+    if (!document.body) return false;
+
+    const fragment = document.createElement('div');
+    fragment.innerHTML = `
+        <button class="tf-orb" id="token_flow_orb" type="button" aria-label="${safeT('打开用量统计')}" title="TokenFlow · ${safeT('用量统计')}">
+            <span class="tf-orb-icon fa-solid fa-chart-line"></span>
+            <span class="tf-orb-badge" id="token_flow_orb_badge" style="display:none"></span>
+        </button>
+        <div class="tf-panel-scrim" id="token_flow_panel_scrim" style="display:none"></div>
+        <section class="tf-panel" id="token_flow_panel" role="dialog" aria-modal="true" style="display:none">
+            <header class="tf-panel-header">
+                <div class="tf-panel-title">
+                    <b>TokenFlow</b>
+                    <span>${safeT('用量统计')}</span>
+                </div>
+                <div class="tf-panel-actions">
+                    <button class="tf-panel-refresh menu_button" id="token_flow_refresh" type="button" title="${safeT('刷新')}"><i class="fa-solid fa-rotate"></i></button>
+                    <button class="tf-panel-reset menu_button" id="token_flow_reset_session" type="button" title="${safeT('重置会话')}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                    <button class="tf-panel-close menu_button" id="token_flow_panel_close" type="button" title="${safeT('关闭')}"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </header>
+            <div class="tf-panel-body" id="token_flow_panel_body"></div>
+        </section>
+    `;
+
+    document.body.appendChild(fragment);
+
+    const orb = document.getElementById('token_flow_orb');
+    const panel = document.getElementById('token_flow_panel');
+    const scrim = document.getElementById('token_flow_panel_scrim');
+    const closeBtn = document.getElementById('token_flow_panel_close');
+    const refreshBtn = document.getElementById('token_flow_refresh');
+    const resetBtn = document.getElementById('token_flow_reset_session');
+
+    // 恢复悬浮球位置
+    const stored = getSettings().orbPosition;
+    if (stored && typeof stored.x === 'number') {
+        orb.style.left = stored.x + 'px';
+        orb.style.top = stored.y + 'px';
+        orb.style.right = 'auto';
+        orb.style.bottom = 'auto';
+    }
+
+    // 拖动逻辑
+    orb.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        const rect = orb.getBoundingClientRect();
+        orbDragState = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            originX: rect.left,
+            originY: rect.top,
+            moved: false,
+        };
+        orb.setPointerCapture?.(e.pointerId);
+        orb.classList.add('is-dragging');
+    });
+    orb.addEventListener('pointermove', (e) => {
+        if (!orbDragState || e.pointerId !== orbDragState.pointerId) return;
+        const dx = e.clientX - orbDragState.startX;
+        const dy = e.clientY - orbDragState.startY;
+        if (Math.hypot(dx, dy) > 5) orbDragState.moved = true;
+        if (!orbDragState.moved) return;
+        let x = orbDragState.originX + dx;
+        let y = orbDragState.originY + dy;
+        x = Math.max(8, Math.min(window.innerWidth - ORB_SIZE - 8, x));
+        y = Math.max(8, Math.min(window.innerHeight - ORB_SIZE - 8, y));
+        orb.style.left = x + 'px';
+        orb.style.top = y + 'px';
+        orb.style.right = 'auto';
+        orb.style.bottom = 'auto';
+        e.preventDefault();
+    });
+    const finishOrbDrag = (e) => {
+        if (!orbDragState || e.pointerId !== orbDragState.pointerId) return;
+        orb.classList.remove('is-dragging');
+        orb.releasePointerCapture?.(e.pointerId);
+        const drag = orbDragState;
+        orbDragState = null;
+        if (drag.moved) {
+            const rect = orb.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const snapLeft = centerX < window.innerWidth / 2;
+            const margin = 12;
+            const snapX = snapLeft ? margin : window.innerWidth - ORB_SIZE - margin;
+            orb.style.left = snapX + 'px';
+            orb.style.right = 'auto';
+            const s = getSettings();
+            s.orbPosition = { x: snapX, y: rect.top };
+            saveSettingsDebounced();
+            orbSuppressClick = true;
+            setTimeout(() => { orbSuppressClick = false; }, 260);
+        }
+    };
+    orb.addEventListener('pointerup', finishOrbDrag);
+    orb.addEventListener('pointercancel', finishOrbDrag);
+
+    // 展开/收起
+    orb.addEventListener('click', () => {
+        if (orbSuppressClick) return;
+        const open = panel.style.display !== 'none';
+        panel.style.display = open ? 'none' : 'flex';
+        scrim.style.display = open ? 'none' : 'block';
+        orb.classList.toggle('is-open', !open);
+        if (!open) { safeUpdateUI(); }
+    });
+    closeBtn.addEventListener('click', () => {
+        panel.style.display = 'none';
+        scrim.style.display = 'none';
+        orb.classList.remove('is-open');
+    });
+    scrim.addEventListener('click', () => {
+        panel.style.display = 'none';
+        scrim.style.display = 'none';
+        orb.classList.remove('is-open');
+    });
+    refreshBtn.addEventListener('click', safeUpdateUI);
+    resetBtn.addEventListener('click', resetSessionStats);
+
+    // ESC 关闭 & 面板标题栏拖动
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && panel.style.display !== 'none') {
+            panel.style.display = 'none';
+            scrim.style.display = 'none';
+            orb.classList.remove('is-open');
+        }
+    });
+
+    console.log('[TokenFlow] floating orb + panel mounted');
+    safeUpdateUI();
+    return true;
+}
+
+/* ============================================================
  *  启动与事件绑定
  *  采用 world-backstage 验证过的模式：
  *  DOM 就绪后再注入 UI，并主动探测容器 + 重试兜底
@@ -606,7 +755,9 @@ function installSettingsEntry() {
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
-                <div id="token_flow_dashboard"></div>
+                <div class="tf-settings-hint">
+                    ${safeT('统计面板已移至悬浮球，点击右下角悬浮球即可展开。')}
+                </div>
                 <div class="tokenflow-settings" id="token_flow_settings_inner"></div>
             </div>
         </div>
@@ -614,7 +765,6 @@ function installSettingsEntry() {
     host.appendChild(entry);
 
     addExtensionSettingsInto(document.getElementById('token_flow_settings_inner'));
-    safeUpdateUI();
     console.log('[TokenFlow] settings panel injected');
     return true;
 }
@@ -661,6 +811,37 @@ function addExtensionSettingsInto(content) {
     const sw3 = mkCheck('useFallback');
     sw3.append(document.createTextNode(safeT('本地估算兜底')));
     row(span(safeT('估算兜底')), sw3);
+
+    // 悬浮球开关
+    const sw4 = mkCheck('showOrb');
+    sw4.append(document.createTextNode(safeT('显示统计悬浮球')));
+    row(span(safeT('统计悬浮球')), sw4);
+    // 监听悬浮球开关
+    const sw4Input = sw4.querySelector('input');
+    sw4Input.addEventListener('change', () => {
+        const orbe = document.getElementById('token_flow_orb');
+        if (orbe) orbe.style.display = sw4Input.checked ? '' : 'none';
+    });
+
+    // 打开统计面板按钮
+    const openBtnRow = document.createElement('div');
+    openBtnRow.className = 'tf-btn-row';
+    const openBtn = document.createElement('button');
+    openBtn.textContent = safeT('打开统计面板');
+    openBtn.className = 'menu_button';
+    openBtn.addEventListener('click', () => {
+        const panel = document.getElementById('token_flow_panel');
+        const scrim = document.getElementById('token_flow_panel_scrim');
+        const orbe = document.getElementById('token_flow_orb');
+        if (panel) {
+            panel.style.display = 'flex';
+            scrim.style.display = 'block';
+            orbe?.classList.add('is-open');
+            safeUpdateUI();
+        }
+    });
+    openBtnRow.appendChild(openBtn);
+    wrap.appendChild(openBtnRow);
 
     // 币种 + 汇率
     row(span(safeT('显示币种')),
@@ -788,12 +969,17 @@ function initialize() {
         };
         tryInject();
 
+        // 挂载悬浮球 + 统计弹层（body 顶层，独立于设置面板）
+        if (settings.showOrb !== false) {
+            ensureFloatingUI();
+        }
+
         // MutationObserver 兜底：即使重试窗口错过容器出现，这里也能捕获
         let mo = null;
         if (window.MutationObserver) {
             mo = new MutationObserver(() => {
                 if (!document.getElementById('token_flow_drawer')) installSettingsEntry();
-                if (!document.getElementById('token_flow_dashboard')) safeUpdateUI();
+                if (!document.getElementById('token_flow_orb') && getSettings().showOrb !== false) ensureFloatingUI();
             });
             // 观察 body，等待 settings 容器被构建后注入
             mo.observe(document.body, { childList: true, subtree: true });

@@ -232,3 +232,157 @@
         font-size: 11px;
     }
 }
+
+/* ============================================================
+ *  TokenFlow · 悬浮球 + 统计弹层
+ * ============================================================ */
+
+.tf-settings-hint {
+    font-size: 12px;
+    opacity: 0.7;
+    padding: 6px 2px 10px;
+    border-bottom: 1px dashed var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    margin-bottom: 10px;
+}
+
+/* 悬浮球 */
+.tf-orb {
+    position: fixed;
+    z-index: 2147483001;
+    right: 24px;
+    bottom: 24px;
+    width: 56px;
+    height: 56px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.5));
+    border-radius: 50%;
+    background: linear-gradient(135deg,
+        color-mix(in srgb, var(--SmartThemeBlurTintColor, #2c3e50) 92%, transparent),
+        color-mix(in srgb, var(--SmartThemeBlurTintColor, #1a252f) 70%, transparent));
+    box-shadow: 0 14px 35px rgba(0, 0, 0, 0.34);
+    cursor: grab;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 180ms ease, box-shadow 180ms ease;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.tf-orb:hover {
+    transform: translateY(-2px);
+}
+
+.tf-orb.is-dragging {
+    cursor: grabbing;
+    transform: scale(1.05);
+    transition: none;
+}
+
+.tf-orb.is-open {
+    box-shadow: 0 0 0 3px color-mix(in srgb, #5eead4 45%, transparent), 0 18px 45px rgba(0, 0, 0, 0.42);
+}
+
+.tf-orb-icon {
+    font-size: 22px;
+    color: #5eead4;
+    text-shadow: 0 2px 10px rgba(94, 234, 212, 0.5);
+}
+
+.tf-orb-badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #e74c3c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* 弹层遮罩 */
+.tf-panel-scrim {
+    position: fixed;
+    z-index: 2147483000;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+}
+
+/* 统计弹层 */
+.tf-panel {
+    position: fixed;
+    z-index: 2147483002;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(720px, calc(100vw - 32px));
+    max-height: min(82vh, 640px);
+    display: flex;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1e293b) 96%, #000);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.35));
+    border-radius: 16px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.tf-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--SmartThemeBorderColor, rgba(128, 128, 128, 0.2));
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #24344a) 80%, transparent);
+    flex: 0 0 auto;
+}
+
+.tf-panel-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.tf-panel-title b {
+    font-size: 16px;
+    font-weight: 700;
+    background: linear-gradient(90deg, #5eead4, #93c5fd);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.tf-panel-title span {
+    font-size: 12px;
+    opacity: 0.65;
+}
+
+.tf-panel-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.tf-panel-actions .menu_button {
+    font-size: 13px;
+    padding: 5px 9px;
+    min-width: 32px;
+    line-height: 1;
+}
+
+.tf-panel-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 16px 18px;
+    -webkit-overflow-scrolling: touch;
+}
