@@ -2,7 +2,7 @@ import {
     eventSource,
     event_types,
     saveSettingsDebounced,
-} from '../../../../script.js';
+} from '../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { t } from '../../../i18n.js';
 
@@ -566,34 +566,222 @@ function resetSessionStats() {
 }
 
 /* ============================================================
- *  启动与事件绑定（官方 IIFE 模式）
+ *  启动与事件绑定
+ *  采用 world-backstage 验证过的模式：
+ *  DOM 就绪后再注入 UI，并主动探测容器 + 重试兜底
  * ============================================================ */
 
-(function () {
+function installSettingsEntry() {
+    // 避免重复注入
+    if (document.getElementById('token_flow_drawer')) return;
+
+    const host = document.querySelector('#extensions_settings2, #extensions_settings');
+    if (!host) return false;
+
+    const entry = document.createElement('div');
+    entry.id = 'token_flow_entry';
+    entry.className = 'tokenflow-settings-entry';
+    const drawer = document.createElement('div');
+    drawer.id = 'token_flow_drawer';
+    drawer.className = 'inline-drawer';
+    const toggle = document.createElement('div');
+    toggle.className = 'inline-drawer-toggle inline-drawer-header';
+    const b = document.createElement('b');
+    b.textContent = 'TokenFlow';
+    const icon = document.createElement('div');
+    icon.className = 'inline-drawer-icon fa-solid fa-circle-chevron-down down';
+    toggle.append(b, icon);
+    const content = document.createElement('div');
+    content.className = 'inline-drawer-content';
+    drawer.append(toggle, content);
+    entry.appendChild(drawer);
+    host.appendChild(entry);
+
+    // Dashboard 容器 + 设置面板
+    const dash = document.createElement('div');
+    dash.id = 'token_flow_dashboard';
+    content.appendChild(dash);
+    addExtensionSettingsInto(content);
+
+    safeUpdateUI();
+    return true;
+}
+
+function addExtensionSettingsInto(content) {
+    const s = getSettings();
+    const wrap = document.createElement('div');
+    wrap.className = 'tokenflow-settings';
+
+    const row = (label, el) => {
+        const r = document.createElement('div');
+        r.className = 'tf-row';
+        r.appendChild(label);
+        r.appendChild(el);
+        wrap.appendChild(r);
+    };
+    const span = (text) => {
+        const e = document.createElement('span');
+        e.textContent = text;
+        e.className = 'tf-label';
+        return e;
+    };
+
+    // 开关
+    const mkCheck = (key) => {
+        const label = document.createElement('label');
+        label.className = 'checkbox_label';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!s[key];
+        cb.addEventListener('change', () => { s[key] = cb.checked; saveSettingsDebounced(); });
+        label.append(cb);
+        return label;
+    };
+
+    const sw1 = mkCheck('enabled');
+    sw1.append(document.createTextNode(t('启用统计')));
+    row(span(t('统计开关')), sw1);
+
+    const sw2 = mkCheck('trackExact');
+    sw2.append(document.createTextNode(t('捕获真实 API usage')));
+    row(span(t('精确追踪')), sw2);
+
+    const sw3 = mkCheck('useFallback');
+    sw3.append(document.createTextNode(t('本地估算兜底')));
+    row(span(t('估算兜底')), sw3);
+
+    // 币种 + 汇率
+    row(span(t('显示币种')),
+        makeInput('tf_currency', 'text', s.displayCurrency, () => {
+            s.displayCurrency = document.getElementById('tf_currency').value || '$';
+            saveSettingsDebounced(); updateDashboard();
+        }));
+    row(span(t('汇率 (1 USD = ?)')),
+        makeInput('tf_rate', 'number', s.exchangeRate, () => {
+            const v = parseFloat(document.getElementById('tf_rate').value);
+            if (v > 0) { s.exchangeRate = v; saveSettingsDebounced(); updateDashboard(); }
+        }));
+
+    // 模型价格编辑表
+    const table = document.createElement('table');
+    table.className = 'tf-price-table';
+    const thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>' + t('模型') + '</th><th>' + t('输入 $/1M') + '</th><th>' + t('输出 $/1M') + '</th><th>' + t('缓存 $/1M') + '</th><th>' + t('按次 $') + '</th><th></th></tr>';
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+
+    const renderRows = () => {
+        tbody.innerHTML = '';
+        s.models.forEach((m, i) => {
+            const tr = document.createElement('tr');
+            const tdName = document.createElement('td');
+            const nameInput = document.createElement('input');
+            nameInput.className = 'text_pole tf-name';
+            nameInput.value = m.name;
+            nameInput.addEventListener('input', () => { m.name = nameInput.value; saveSettingsDebounced(); });
+            tdName.appendChild(nameInput);
+            tr.appendChild(tdName);
+
+            for (const f of ['input', 'output', 'cached', 'perRequest']) {
+                const td = document.createElement('td');
+                const inp = document.createElement('input');
+                inp.className = 'text_pole tf-num';
+                inp.type = 'number';
+                inp.step = 'any';
+                inp.value = m[f];
+                inp.addEventListener('input', () => {
+                    const v = parseFloat(inp.value);
+                    m[f] = isNaN(v) ? 0 : v;
+                    saveSettingsDebounced(); updateDashboard();
+                });
+                td.appendChild(inp);
+                tr.appendChild(td);
+            }
+
+            const tdDel = document.createElement('td');
+            const delBtn = document.createElement('button');
+            delBtn.textContent = '✕';
+            delBtn.className = 'tf-del';
+            delBtn.addEventListener('click', () => {
+                if (s.models.length <= 1) return;
+                s.models.splice(i, 1);
+                saveSettingsDebounced(); renderRows();
+            });
+            tdDel.appendChild(delBtn);
+            tr.appendChild(tdDel);
+            tbody.appendChild(tr);
+        });
+    };
+    renderRows();
+    table.appendChild(tbody);
+    wrap.appendChild(span(t('模型价格表')));
+    wrap.appendChild(table);
+
+    const addBtn = document.createElement('button');
+    addBtn.textContent = '+' + t('添加模型');
+    addBtn.className = 'menu_button';
+    addBtn.addEventListener('click', () => {
+        s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0 });
+        saveSettingsDebounced(); renderRows();
+    });
+    wrap.appendChild(addBtn);
+
+    // 数据操作
+    const btnRow = document.createElement('div');
+    btnRow.className = 'tf-btn-row';
+    const resetAll = document.createElement('button');
+    resetAll.textContent = t('清空全部数据');
+    resetAll.className = 'menu_button';
+    resetAll.addEventListener('click', () => {
+        s.stats = structuredClone(defaultSettings.stats);
+        s.session = structuredClone(defaultSettings.session);
+        saveSettingsDebounced(); updateDashboard();
+    });
+    const resetSession = document.createElement('button');
+    resetSession.textContent = t('重置会话');
+    resetSession.className = 'menu_button';
+    resetSession.addEventListener('click', () => {
+        s.session = structuredClone(defaultSettings.session);
+        saveSettingsDebounced(); updateDashboard();
+    });
+    btnRow.appendChild(resetAll);
+    btnRow.appendChild(resetSession);
+    wrap.appendChild(btnRow);
+
+    content.appendChild(wrap);
+}
+
+function initialize() {
+    if (globalThis.__tokenFlowLoaded) return;
+    globalThis.__tokenFlowLoaded = true;
+
     try {
         const settings = getSettings();
-        addExtensionSettings(settings);
+
+        // 注入设置面板（带重试，等待扩展设置容器出现）
+        const tryInject = () => {
+            if (installSettingsEntry()) return;
+            // 容器未就绪，稍后重试
+            setTimeout(tryInject, 500);
+        };
+        tryInject();
 
         // 安装 fetch 拦截器（捕获真实 API usage）
         if (settings.trackExact) installFetchInterceptor();
 
-        // 首次渲染统计面板
-        safeUpdateUI();
-
-        // 会话切换时重建面板
-        eventSource.on(event_types.CHAT_CHANGED, () => {
-            safeUpdateUI();
-        });
         // 生成结束后刷新统计
-        eventSource.on(event_types.GENERATION_ENDED, () => {
-            safeUpdateUI();
-        });
-        eventSource.on(event_types.MESSAGE_RECEIVED, () => {
-            safeUpdateUI();
-        });
+        eventSource.on(event_types.GENERATION_ENDED, () => { safeUpdateUI(); });
+        eventSource.on(event_types.CHAT_CHANGED, () => { safeUpdateUI(); });
+        eventSource.on(event_types.MESSAGE_RECEIVED, () => { safeUpdateUI(); });
 
         console.log('[TokenFlow] initialized');
     } catch (e) {
         console.error('[TokenFlow] init error:', e);
     }
-})();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize, { once: true });
+} else {
+    initialize();
+}
