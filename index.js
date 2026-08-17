@@ -40,9 +40,10 @@ const PRESET_MODELS = [
     // Anthropic
     { name: 'claude-opus-4.6',    input: 15.00, output: 75.00, cached: 1.50,  perRequest: 0 },
     { name: 'claude-sonnet-4.6',  input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
-    // DeepSeek · V4 全系列（正式版/预览版同价，CNY→USD @7.1）
-    { name: 'deepseek-v4-flash',  input: 0.14, output: 0.28,  cached: 0.003,  perRequest: 0 },
-    { name: 'deepseek-v4-pro',    input: 0.42, output: 0.85,  cached: 0.004,  perRequest: 0 },
+    // DeepSeek · V4 全系列（快Flash/Pro，均含正式版与预览版；高峰价基准，CNY→USD@7.1）
+    // 官方：自2026-08-17起峰谷定价，高峰(9-12,14-18时)为淡季2倍。此处取高峰"缓存未命中输入+输出"为基准
+    { name: 'deepseek-v4-flash',  input: 0.42, output: 1.27,  cached: 0.014, perRequest: 0 },
+    { name: 'deepseek-v4-pro',    input: 1.27, output: 3.80,  cached: 0.042, perRequest: 0 },
     // Kimi (月之暗面，CNY→USD @7.1)
     { name: 'kimi-k3',            input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
     { name: 'kimi-k2.6',          input: 0.95, output: 4.00,  cached: 0.10,   perRequest: 0 },
@@ -57,7 +58,7 @@ const defaultSettings = {
     showOrb: true,
     orbPosition: null,
     models: structuredClone(PRESET_MODELS),
-    modelVersion: 20260818,
+    modelVersion: 20260819,
     stats: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     session: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     sessionStartedAt: Date.now(),
@@ -72,9 +73,25 @@ function getSettings() {
         if (s[key] === undefined) s[key] = structuredClone(defaultSettings[key]);
     }
     if (!Array.isArray(s.models)) s.models = structuredClone(PRESET_MODELS);
-    // 预设价格表升级：内置版本比用户保存的新时，整体刷新为最新旗舰报价（剔除过时模型）
-    if ((s.modelVersion || 0) < (defaultSettings.modelVersion || 0)) {
-        s.models = structuredClone(PRESET_MODELS);
+    // 预设价格表升级（双保险）：
+    // 1) 内置版本比用户保存的新时，整体刷新为最新旗舰报价
+    // 2) 即便版本号未变，也主动剔除已淘汰的旧模型，并确保当前旗舰系列存在
+    const OBSOLETE = ['gpt-4o', 'gpt-4o-mini', 'gpt-5', 'deepseek-chat', 'deepseek-reasoner', 'qwen3.5-plus', 'mimo-v2.5-pro'];
+    const NEEDS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'deepseek-v4-flash', 'deepseek-v4-pro', 'gemini-3.7-flash'];
+    const outdatedVersion = (s.modelVersion || 0) < (defaultSettings.modelVersion || 0);
+    const hasObsolete = OBSOLETE.some(dep => s.models.some(m => String(m.name).toLowerCase().includes(dep)));
+    const missingFlagships = NEEDS.some(need => !s.models.some(m => String(m.name).toLowerCase() === need));
+    if (outdatedVersion || hasObsolete || missingFlagships) {
+        // 保留用户手动添加的自定义模型（不在预设命名空间内的），其余以最新预设刷新
+        const presetNames = new Map(PRESET_MODELS.map(m => [String(m.name).toLowerCase(), m]));
+        const userAdded = s.models.filter(m => !presetNames.has(String(m.name).toLowerCase()));
+        const fresh = structuredClone(PRESET_MODELS);
+        // 合并用户自定义模型（去重）
+        for (const u of userAdded) {
+            const ukey = String(u.name).toLowerCase();
+            if (!fresh.some(f => String(f.name).toLowerCase() === ukey)) fresh.push(u);
+        }
+        s.models = fresh;
         s.modelVersion = defaultSettings.modelVersion;
         saveSettingsDebounced();
     }
