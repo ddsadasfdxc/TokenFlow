@@ -2,9 +2,9 @@ import {
     eventSource,
     event_types,
     saveSettingsDebounced,
-} from '../../../script.js';
-import { extension_settings } from '../../../extensions.js';
-import { t } from '../../../i18n.js';
+} from '../../../../script.js';
+import { extension_settings } from '../../../../extensions.js';
+import { t } from '../../../../i18n.js';
 
 const MODULE = 'token_flow';
 const GENERATE_ENDPOINT = '/api/backends/chat-completions/generate';
