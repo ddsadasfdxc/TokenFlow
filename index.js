@@ -593,8 +593,6 @@ function updateDashboard() {
         });
         grid.appendChild(tbl);
     }
-    }
-
     const started = document.createElement('div');
     started.className = 'tf-session-start';
     const d = new Date(s.sessionStartedAt || Date.now());
