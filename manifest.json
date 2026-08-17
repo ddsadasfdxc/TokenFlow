@@ -1,6 +1,7 @@
 {
     "display_name": "TokenFlow · 用量统计",
     "loading_order": 500,
+    "minimum_client_version": "1.12.0",
     "requires": [],
     "optional": [],
     "js": "bootstrap.js",
