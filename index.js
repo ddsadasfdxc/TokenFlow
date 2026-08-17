@@ -2,7 +2,7 @@ import {
     eventSource,
     event_types,
     saveSettingsDebounced,
-} from '../../../script.js';
+} from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { t } from '../../../i18n.js';
 
