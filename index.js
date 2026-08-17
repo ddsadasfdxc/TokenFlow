@@ -28,20 +28,24 @@ const STREAM_DONE = '[DONE]';
 // 2026 最新旗舰定价（$/1M token，cached 为缓存输入价）
 // Kimi 官方为 CNY，已按 ~7.1 汇率折算为 USD 基准
 const PRESET_MODELS = [
-    // OpenAI
-    { name: 'gpt-5.5',            input: 5.00, output: 30.00, cached: 2.50,   perRequest: 0 },
-    { name: 'gpt-5.4',            input: 2.50, output: 15.00, cached: 1.25,   perRequest: 0 },
-    // Google
+    // OpenAI · ChatGPT 5.6 系列（3 档）
+    { name: 'gpt-5.6-sol',        input: 5.00, output: 30.00, cached: 0.50,   perRequest: 0 },
+    { name: 'gpt-5.6-terra',      input: 2.50, output: 15.00, cached: 0.25,   perRequest: 0 },
+    { name: 'gpt-5.6-luna',       input: 1.00, output: 6.00,  cached: 0.10,   perRequest: 0 },
+    // Google · Gemini
     { name: 'gemini-3.1-pro',     input: 2.00, output: 12.00, cached: 0.40,   perRequest: 0 },
+    { name: 'gemini-3.5-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0 },
+    { name: 'gemini-3.6-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0 },
+    { name: 'gemini-3.7-flash',   input: 0.75, output: 3.75,  cached: 0.15,   perRequest: 0 },
     // Anthropic
     { name: 'claude-opus-4.6',    input: 15.00, output: 75.00, cached: 1.50,  perRequest: 0 },
     { name: 'claude-sonnet-4.6',  input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
-    // DeepSeek
-    { name: 'deepseek-chat',      input: 0.14, output: 0.28,  cached: 0.07,   perRequest: 0 },
-    { name: 'deepseek-reasoner',  input: 0.55, output: 2.19,  cached: 0.14,   perRequest: 0 },
-    // Kimi (月之暗面)
-    { name: 'kimi-k3',            input: 2.80, output: 14.00, cached: 1.40,   perRequest: 0 },
-    { name: 'kimi-k2.6',          input: 0.92, output: 3.80,  cached: 0.46,   perRequest: 0 },
+    // DeepSeek · V4 全系列（正式版/预览版同价，CNY→USD @7.1）
+    { name: 'deepseek-v4-flash',  input: 0.14, output: 0.28,  cached: 0.003,  perRequest: 0 },
+    { name: 'deepseek-v4-pro',    input: 0.42, output: 0.85,  cached: 0.004,  perRequest: 0 },
+    // Kimi (月之暗面，CNY→USD @7.1)
+    { name: 'kimi-k3',            input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
+    { name: 'kimi-k2.6',          input: 0.95, output: 4.00,  cached: 0.10,   perRequest: 0 },
 ];
 
 const defaultSettings = {
@@ -53,7 +57,7 @@ const defaultSettings = {
     showOrb: true,
     orbPosition: null,
     models: structuredClone(PRESET_MODELS),
-    modelVersion: 20260817,
+    modelVersion: 20260818,
     stats: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     session: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     sessionStartedAt: Date.now(),
