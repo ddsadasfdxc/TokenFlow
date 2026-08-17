@@ -3,7 +3,7 @@
     "loading_order": 500,
     "requires": [],
     "optional": [],
-    "js": "index.js",
+    "js": "bootstrap.js",
     "css": "style.css",
     "author": "Operit",
     "version": "1.0.0",
