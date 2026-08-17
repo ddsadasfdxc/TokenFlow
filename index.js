@@ -6,6 +6,21 @@ import {
 import { extension_settings } from '../../../extensions.js';
 import { t } from '../../../i18n.js';
 
+// 安全获取 SillyTavern 上下文（world-backstage 验证过的模式）
+function getContext() {
+    return globalThis.SillyTavern?.getContext?.() || null;
+}
+
+// 安全的 i18n 包装：避免 t() 在上下文未就绪时抛异常导致渲染中断
+function safeT(key) {
+    try {
+        const result = t(key);
+        return (typeof result === 'string' && result.length > 0) ? result : key;
+    } catch {
+        return key;
+    }
+}
+
 const MODULE = 'token_flow';
 const GENERATE_ENDPOINT = '/api/backends/chat-completions/generate';
 const STREAM_DONE = '[DONE]';
@@ -328,8 +343,8 @@ function addExtensionSettings() {
     cb.checked = !!s.enabled;
     cb.addEventListener('change', () => { s.enabled = cb.checked; saveSettingsDebounced(); });
     sw.appendChild(cb);
-    sw.appendChild(document.createTextNode(t('启用统计')));
-    row(span(t('统计开关')), sw);
+    sw.appendChild(document.createTextNode(safeT('启用统计')));
+    row(span(safeT('统计开关')), sw);
 
     const sw2 = document.createElement('label');
     sw2.className = 'checkbox_label';
@@ -338,8 +353,8 @@ function addExtensionSettings() {
     cb2.checked = !!s.trackExact;
     cb2.addEventListener('change', () => { s.trackExact = cb2.checked; saveSettingsDebounced(); });
     sw2.appendChild(cb2);
-    sw2.appendChild(document.createTextNode(t('捕获真实 API usage')));
-    row(span(t('精确追踪')), sw2);
+    sw2.appendChild(document.createTextNode(safeT('捕获真实 API usage')));
+    row(span(safeT('精确追踪')), sw2);
 
     const sw3 = document.createElement('label');
     sw3.className = 'checkbox_label';
@@ -348,16 +363,16 @@ function addExtensionSettings() {
     cb3.checked = !!s.useFallback;
     cb3.addEventListener('change', () => { s.useFallback = cb3.checked; saveSettingsDebounced(); });
     sw3.appendChild(cb3);
-    sw3.appendChild(document.createTextNode(t('本地估算兜底')));
-    row(span(t('估算兜底')), sw3);
+    sw3.appendChild(document.createTextNode(safeT('本地估算兜底')));
+    row(span(safeT('估算兜底')), sw3);
 
     // 币种 + 汇率
-    row(span(t('显示币种')),
+    row(span(safeT('显示币种')),
         makeInput('tf_currency', 'text', s.displayCurrency, () => {
             s.displayCurrency = document.getElementById('tf_currency').value || '$';
             saveSettingsDebounced(); updateDashboard();
         }));
-    row(span(t('汇率 (1 USD = ?)')),
+    row(span(safeT('汇率 (1 USD = ?)')),
         makeInput('tf_rate', 'number', s.exchangeRate, () => {
             const v = parseFloat(document.getElementById('tf_rate').value);
             if (v > 0) { s.exchangeRate = v; saveSettingsDebounced(); updateDashboard(); }
@@ -367,7 +382,7 @@ function addExtensionSettings() {
     const table = document.createElement('table');
     table.className = 'tf-price-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>' + t('模型') + '</th><th>' + t('输入 $/1M') + '</th><th>' + t('输出 $/1M') + '</th><th>' + t('缓存 $/1M') + '</th><th>' + t('按次 $') + '</th><th></th></tr>';
+    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th></th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
 
@@ -415,11 +430,11 @@ function addExtensionSettings() {
     };
     renderRows();
     table.appendChild(tbody);
-    wrap.appendChild(span(t('模型价格表')));
+    wrap.appendChild(span(safeT('模型价格表')));
     wrap.appendChild(table);
 
     const addBtn = document.createElement('button');
-    addBtn.textContent = '+' + t('添加模型');
+    addBtn.textContent = '+' + safeT('添加模型');
     addBtn.className = 'menu_button';
     addBtn.addEventListener('click', () => {
         s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0 });
@@ -431,7 +446,7 @@ function addExtensionSettings() {
     const btnRow = document.createElement('div');
     btnRow.className = 'tf-btn-row';
     const resetAll = document.createElement('button');
-    resetAll.textContent = t('清空全部数据');
+    resetAll.textContent = safeT('清空全部数据');
     resetAll.className = 'menu_button';
     resetAll.addEventListener('click', () => {
         s.stats = structuredClone(defaultSettings.stats);
@@ -439,7 +454,7 @@ function addExtensionSettings() {
         saveSettingsDebounced(); updateDashboard();
     });
     const resetSession = document.createElement('button');
-    resetSession.textContent = t('重置会话');
+    resetSession.textContent = safeT('重置会话');
     resetSession.className = 'menu_button';
     resetSession.addEventListener('click', () => {
         s.session = structuredClone(defaultSettings.session);
@@ -459,7 +474,7 @@ function updateDashboard() {
     if (!el) return;
     const s = getSettings();
     if (!s.enabled) {
-        el.innerHTML = '<div class="tf-dash-muted">' + t('统计已关闭') + '</div>';
+        el.innerHTML = '<div class="tf-dash-muted">' + safeT('统计已关闭') + '</div>';
         return;
     }
 
@@ -495,10 +510,10 @@ function updateDashboard() {
     const grid = document.createElement('div');
     grid.className = 'tf-grid';
 
-    grid.appendChild(statCard(t('累计费用'), fmtMoney(s, totalCost), s.displayCurrency));
-    grid.appendChild(statCard(t('累计 Token'), fmtTokens(totalTokens), totalReq + ' ' + t('次请求')));
-    grid.appendChild(statCard(t('会话费用'), fmtMoney(s, sessCost), s.displayCurrency));
-    grid.appendChild(statCard(t('会话 Token'), fmtTokens(sessTokens), sessReq + ' ' + t('次请求')));
+    grid.appendChild(statCard(safeT('累计费用'), fmtMoney(s, totalCost), s.displayCurrency));
+    grid.appendChild(statCard(safeT('累计 Token'), fmtTokens(totalTokens), totalReq + ' ' + safeT('次请求')));
+    grid.appendChild(statCard(safeT('会话费用'), fmtMoney(s, sessCost), s.displayCurrency));
+    grid.appendChild(statCard(safeT('会话 Token'), fmtTokens(sessTokens), sessReq + ' ' + safeT('次请求')));
 
     // 按模型明细
     const modelKeys = Object.keys(total.models || {}).sort();
@@ -507,7 +522,7 @@ function updateDashboard() {
         tbl.className = 'tf-model-table';
         const title = document.createElement('div');
         title.className = 'tf-model-title';
-        title.textContent = t('模型明细');
+        title.textContent = safeT('模型明细');
         tbl.appendChild(title);
 
         for (const key of modelKeys) {
@@ -522,8 +537,8 @@ function updateDashboard() {
             nameEl.textContent = key;
             const meta = document.createElement('span');
             meta.className = 'tf-model-meta';
-            const estMark = m.est > 0 ? ' · ' + t('含估算') : '';
-            meta.textContent = `${fmtTokens(m.in + m.out + m.cached)} · ${m.req} ${t('次')}${estMark}`;
+            const estMark = m.est > 0 ? ' · ' + safeT('含估算') : '';
+            meta.textContent = `${fmtTokens(m.in + m.out + m.cached)} · ${m.req} ${safeT('次')}${estMark}`;
             left.appendChild(nameEl);
             left.appendChild(meta);
 
@@ -541,7 +556,7 @@ function updateDashboard() {
     const started = document.createElement('div');
     started.className = 'tf-session-start';
     const d = new Date(s.sessionStartedAt || Date.now());
-    started.textContent = t('会话开始于') + ' ' + d.toLocaleString();
+    started.textContent = safeT('会话开始于') + ' ' + d.toLocaleString();
     grid.appendChild(started);
 
     el.innerHTML = '';
@@ -636,24 +651,24 @@ function addExtensionSettingsInto(content) {
     };
 
     const sw1 = mkCheck('enabled');
-    sw1.append(document.createTextNode(t('启用统计')));
-    row(span(t('统计开关')), sw1);
+    sw1.append(document.createTextNode(safeT('启用统计')));
+    row(span(safeT('统计开关')), sw1);
 
     const sw2 = mkCheck('trackExact');
-    sw2.append(document.createTextNode(t('捕获真实 API usage')));
-    row(span(t('精确追踪')), sw2);
+    sw2.append(document.createTextNode(safeT('捕获真实 API usage')));
+    row(span(safeT('精确追踪')), sw2);
 
     const sw3 = mkCheck('useFallback');
-    sw3.append(document.createTextNode(t('本地估算兜底')));
-    row(span(t('估算兜底')), sw3);
+    sw3.append(document.createTextNode(safeT('本地估算兜底')));
+    row(span(safeT('估算兜底')), sw3);
 
     // 币种 + 汇率
-    row(span(t('显示币种')),
+    row(span(safeT('显示币种')),
         makeInput('tf_currency', 'text', s.displayCurrency, () => {
             s.displayCurrency = document.getElementById('tf_currency').value || '$';
             saveSettingsDebounced(); updateDashboard();
         }));
-    row(span(t('汇率 (1 USD = ?)')),
+    row(span(safeT('汇率 (1 USD = ?)')),
         makeInput('tf_rate', 'number', s.exchangeRate, () => {
             const v = parseFloat(document.getElementById('tf_rate').value);
             if (v > 0) { s.exchangeRate = v; saveSettingsDebounced(); updateDashboard(); }
@@ -663,7 +678,7 @@ function addExtensionSettingsInto(content) {
     const table = document.createElement('table');
     table.className = 'tf-price-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>' + t('模型') + '</th><th>' + t('输入 $/1M') + '</th><th>' + t('输出 $/1M') + '</th><th>' + t('缓存 $/1M') + '</th><th>' + t('按次 $') + '</th><th></th></tr>';
+    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th></th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
 
@@ -711,11 +726,11 @@ function addExtensionSettingsInto(content) {
     };
     renderRows();
     table.appendChild(tbody);
-    wrap.appendChild(span(t('模型价格表')));
+    wrap.appendChild(span(safeT('模型价格表')));
     wrap.appendChild(table);
 
     const addBtn = document.createElement('button');
-    addBtn.textContent = '+' + t('添加模型');
+    addBtn.textContent = '+' + safeT('添加模型');
     addBtn.className = 'menu_button';
     addBtn.addEventListener('click', () => {
         s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0 });
@@ -727,7 +742,7 @@ function addExtensionSettingsInto(content) {
     const btnRow = document.createElement('div');
     btnRow.className = 'tf-btn-row';
     const resetAll = document.createElement('button');
-    resetAll.textContent = t('清空全部数据');
+    resetAll.textContent = safeT('清空全部数据');
     resetAll.className = 'menu_button';
     resetAll.addEventListener('click', () => {
         s.stats = structuredClone(defaultSettings.stats);
@@ -735,7 +750,7 @@ function addExtensionSettingsInto(content) {
         saveSettingsDebounced(); updateDashboard();
     });
     const resetSession = document.createElement('button');
-    resetSession.textContent = t('重置会话');
+    resetSession.textContent = safeT('重置会话');
     resetSession.className = 'menu_button';
     resetSession.addEventListener('click', () => {
         s.session = structuredClone(defaultSettings.session);
@@ -760,29 +775,54 @@ function initialize() {
 
         // 注入设置面板（带重试，等待扩展设置容器出现）
         let retryCount = 0;
+        let injectTimer = null;
         const tryInject = () => {
             if (installSettingsEntry()) return;
-            // 容器未就绪，稍后重试
             retryCount++;
-            if (retryCount > 20) {
-                console.error('[TokenFlow] settings container not found after 20 retries, giving up');
+            if (retryCount > 30) {
+                console.error('[TokenFlow] settings container not found after 30 retries, giving up');
                 return;
             }
             console.log('[TokenFlow] retrying injection...', retryCount);
-            setTimeout(tryInject, 500);
+            injectTimer = setTimeout(tryInject, 300);
         };
         tryInject();
+
+        // MutationObserver 兜底：即使重试窗口错过容器出现，这里也能捕获
+        let mo = null;
+        if (window.MutationObserver) {
+            mo = new MutationObserver(() => {
+                if (!document.getElementById('token_flow_drawer')) installSettingsEntry();
+                if (!document.getElementById('token_flow_dashboard')) safeUpdateUI();
+            });
+            // 观察 body，等待 settings 容器被构建后注入
+            mo.observe(document.body, { childList: true, subtree: true });
+        }
 
         // 安装 fetch 拦截器（捕获真实 API usage）
         if (settings.trackExact) installFetchInterceptor();
 
-        // 生成结束后刷新统计
-        const safeOn = (ev) => {
-            try { if (ev && ev.length) eventSource.on(ev, safeUpdateUI); } catch (e) { console.warn('[TokenFlow] event bind error:', e); }
+        // 事件绑定：优先通过 SILVYTAVERN 全局上下文获取（world-backstage 验证过的模式），
+        // 失败则回退到静态 import 的事件源。
+        const context = getContext();
+        const source = context?.eventSource || eventSource;
+        const events = context?.eventTypes || context?.event_types || event_types;
+
+        const on = (ev, handler) => {
+            try {
+                const tgt = events[ev];
+                if (source && tgt) source.on(tgt, handler);
+                else console.warn('[TokenFlow] missing event binding for', ev);
+            } catch (e) { console.warn('[TokenFlow] event bind error:', e); }
         };
-        safeOn(event_types.GENERATION_ENDED);
-        safeOn(event_types.CHAT_CHANGED);
-        safeOn(event_types.MESSAGE_RECEIVED);
+
+        // 聊天切换时重新尝试注入设置面板（有时 settings 容器是切换后才挂载的）
+        on('CHAT_CHANGED', () => {
+            if (!document.getElementById('token_flow_drawer')) tryInject();
+            safeUpdateUI();
+        });
+        on('GENERATION_ENDED', safeUpdateUI);
+        on('MESSAGE_RECEIVED', safeUpdateUI);
 
         console.log('[TokenFlow] initialized successfully');
     } catch (e) {
