@@ -85,6 +85,9 @@ const defaultSettings = {
         upgradePrice: 'SGD 6.98/月',    // 升级卡片价格
         upgradeMultiplier: 2,           // 升级后倍数
     },
+    // ===== v1.4.0：悬浮球增强 =====
+    autoRefresh: false,                // 自动刷新
+    autoRefreshInterval: 15,           // 自动刷新间隔（秒）
 };
 
 function getSettings() {
@@ -1203,6 +1206,54 @@ function renderGeminiQuota(el, s) {
         console.warn('[TokenFlow] renderGeminiQuota:', e);
     }
 }
+// 主题 id → 展示名（i18n）
+function themeNameOf(id) {
+    const map = {
+        'cyber-royal': '赛博帝京',
+        'ink-zen': '水墨禅境',
+        'aurora-midnight': '午夜极光',
+        'molten-gold': '熔金斜阳',
+        'mono-white': '纯白极简',
+    };
+    return map[id] || id;
+}
+
+// 构建用量摘要文本（供复制）
+function buildUsageSummary(s) {
+    const total = s.stats || {};
+    const sess = s.session || {};
+    const now = new Date();
+    const lines = [
+        `TokenFlow · ${safeT('用量摘要')} — ${now.toLocaleString()}`,
+        `── ${safeT('累计')} ──`,
+        `${safeT('累计费用')}: ${fmtMoney(s, total.totalCost || 0)}`,
+        `${safeT('累计')} Token: ${fmtTokens(total.totalTokens || 0)} · ${total.totalRequests || 0} ${safeT('次请求')}`,
+        `── ${safeT('会话')} ──`,
+        `${safeT('会话费用')}: ${fmtMoney(s, sess.totalCost || 0)}`,
+        `${safeT('会话')} Token: ${fmtTokens(sess.totalTokens || 0)} · ${sess.totalRequests || 0} ${safeT('次请求')}`,
+    ];
+    const ctx = contextUsagePercent();
+    if (ctx && ctx.limit) lines.push(`${safeT('上下文占用')}: ${Math.round(ctx.pct)}% (${fmtTokens(ctx.used)}/${fmtTokens(ctx.limit)})`);
+    return lines.join('\n');
+}
+
+// 剪贴板兜底（textarea 全选 execCommand）
+function fallbackCopy(text) {
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        Toast?.system?.(safeT('已复制'));
+    } catch (err) {
+        console.warn('[TokenFlow] fallbackCopy:', err);
+    }
+}
+
 function applyTheme() {
     try {
         const s = getSettings();
@@ -1267,10 +1318,23 @@ function ensureFloatingUI() {
                     <b>TokenFlow</b>
                     <span>${safeT('用量统计')}</span>
                 </div>
-                <div class="tf-panel-actions">
-                    <button class="tf-panel-refresh menu_button" id="token_flow_refresh" type="button" title="${safeT('刷新')}"><i class="fa-solid fa-rotate"></i></button>
-                    <button class="tf-panel-reset menu_button" id="token_flow_reset_session" type="button" title="${safeT('重置会话')}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                    <button class="tf-panel-close menu_button" id="token_flow_panel_close" type="button" title="${safeT('关闭')}"><i class="fa-solid fa-xmark"></i></button>
+                <div class="tf-panel-header-right">
+                    <div class="tf-theme-switcher" id="token_flow_theme_switcher" title="${safeT('主题')}">
+                        <button class="tf-theme-switch-btn menu_button" type="button" title="${safeT('切换主题')}"><i class="fa-solid fa-palette"></i></button>
+                        <div class="tf-theme-menu" id="token_flow_theme_menu">
+                            ${['cyber-royal','ink-zen','aurora-midnight','molten-gold','mono-white'].map(id =>
+                                `<button type="button" class="tf-theme-menu-item" data-theme-id="${id}" data-theme-name="${safeT(themeNameOf(id))}">${safeT(themeNameOf(id))}</button>`
+                            ).join('')}
+                        </div>
+                    </div>
+                    <div class="tf-panel-actions">
+                        <button class="tf-panel-copy menu_button" id="token_flow_copy_summary" type="button" title="${safeT('复制用量摘要')}"><i class="fa-solid fa-copy"></i></button>
+                        <button class="tf-panel-auto menu_button" id="token_flow_auto_refresh" type="button" title="${safeT('自动刷新')}"><i class="fa-solid fa-rotate"></i></button>
+                        <button class="tf-panel-dl menu_button" id="token_flow_dl_backup" type="button" title="${safeT('导出备份')}"><i class="fa-solid fa-download"></i></button>
+                        <button class="tf-panel-refresh-tick menu_button" id="token_flow_manual_refresh" type="button" title="${safeT('刷新')}"><i class="fa-solid fa-arrows-rotate"></i></button>
+                        <button class="tf-panel-reset menu_button" id="token_flow_reset_session" type="button" title="${safeT('重置会话')}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                        <button class="tf-panel-close menu_button" id="token_flow_panel_close" type="button" title="${safeT('关闭')}"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
                 </div>
             </header>
             <div class="tf-panel-body" id="token_flow_panel_body"></div>
@@ -1283,7 +1347,7 @@ function ensureFloatingUI() {
     const panel = document.getElementById('token_flow_panel');
     const scrim = document.getElementById('token_flow_panel_scrim');
     const closeBtn = document.getElementById('token_flow_panel_close');
-    const refreshBtn = document.getElementById('token_flow_refresh');
+    const refreshBtn = document.getElementById('token_flow_manual_refresh') || document.getElementById('token_flow_refresh');
     const resetBtn = document.getElementById('token_flow_reset_session');
 
     // 恢复悬浮球位置
@@ -1372,12 +1436,103 @@ function ensureFloatingUI() {
     refreshBtn.addEventListener('click', safeUpdateUI);
     resetBtn.addEventListener('click', resetSessionStats);
 
+    // ===== v1.4.0：主题切换下拉 + 快捷功能 =====
+    const themeSwitchBtn = document.querySelector('#token_flow_theme_switcher .tf-theme-switch-btn');
+    const themeMenu = document.getElementById('token_flow_theme_menu');
+
+    if (themeSwitchBtn) {
+        themeSwitchBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            themeMenu.classList.toggle('open');
+        });
+    }
+    if (themeMenu) {
+        themeMenu.addEventListener('click', (e) => {
+            const item = e.target.closest('.tf-theme-menu-item');
+            if (!item) return;
+            const s = getSettings();
+            s.theme = item.getAttribute('data-theme-id') || s.theme;
+            applyTheme();
+            saveSettingsDebounced();
+            document.querySelectorAll('#token_flow_drawer .tf-theme-chip').forEach(c => {
+                c.classList.toggle('active', c.getAttribute('data-theme') === s.theme);
+            });
+            themeMenu.classList.remove('open');
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#token_flow_theme_switcher')) themeMenu.classList.remove('open');
+        });
+    }
+    applyTheme();
+
+    // 复制用量摘要
+    const copyBtn = document.getElementById('token_flow_copy_summary');
+    if (copyBtn) copyBtn.addEventListener('click', () => {
+        try {
+            const s = getSettings();
+            const txt = buildUsageSummary(s);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(txt).then(() => Toast?.system?.(safeT('已复制'))).catch(() => fallbackCopy(txt));
+            } else fallbackCopy(txt);
+        } catch (err) { console.warn('[TokenFlow] copy:', err); }
+    });
+
+    // 自动刷新
+    const autoBtn = document.getElementById('token_flow_auto_refresh');
+    if (autoBtn) {
+        let autoTimer = null;
+        const applyAutoState = () => {
+            const s = getSettings();
+            if (s.autoRefresh) {
+                autoBtn.classList.add('active');
+                if (!autoTimer) autoTimer = setInterval(safeUpdateUI, (s.autoRefreshInterval || 15) * 1000);
+            } else {
+                autoBtn.classList.remove('active');
+                if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+            }
+        };
+        autoBtn.addEventListener('click', () => {
+            const s = getSettings();
+            s.autoRefresh = !s.autoRefresh;
+            saveSettingsDebounced();
+            applyAutoState();
+        });
+        applyAutoState();
+    }
+
+    // 导出备份
+    const dlBtn = document.getElementById('token_flow_dl_backup');
+    if (dlBtn) dlBtn.addEventListener('click', () => {
+        try {
+            const s = getSettings();
+            const payload = { version: 1, exportedAt: Date.now(), settings: s };
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'tokenflow_backup.json'; document.body.appendChild(a); a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 500);
+            Toast?.system?.(safeT('已导出'));
+        } catch (err) { console.warn('[TokenFlow] export:', err); }
+    });
+
     // ESC 关闭 & 面板标题栏拖动
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && panel.style.display !== 'none') {
             panel.style.display = 'none';
             scrim.style.display = 'none';
             orb.classList.remove('is-open');
+            return;
+        }
+        // ===== v1.4.0：全局快捷键 Ctrl+Shift+T 开/关悬浮球面板 =====
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && String(e.key).toLowerCase() === 't') {
+            e.preventDefault();
+            e.stopPropagation();
+            const open = panel.style.display !== 'none';
+            panel.style.display = open ? 'none' : 'flex';
+            scrim.style.display = open ? 'none' : 'block';
+            orb.classList.toggle('is-open', !open);
+            if (!open) safeUpdateUI();
+            Toast?.system?.(open ? safeT('隐藏统计面板') : safeT('显示统计面板'));
         }
     });
 
