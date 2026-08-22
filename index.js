@@ -72,6 +72,19 @@ const defaultSettings = {
     archiveDays: 30,                   // 历史归档保留天数
     // ===== v1.2.0：五套大师级主题 =====
     theme: 'aurora-midnight',          // 默认主题
+    // ===== v1.3.0：Gemini 风格用量限额 =====
+    geminiQuota: {
+        enabled: true,                  // 是否显示用量限额面板
+        metric: 'tokens',               // 度量方式：tokens | cost | requests
+        dailyLimit: 0,                  // 每日限额（metric 单位），0=不限
+        weeklyLimit: 0,                 // 每周限额，0=不限
+        dailyResetTime: '17:19',        // 每日重置时刻 (HH:MM)
+        weeklyResetDay: 4,              // 每周重置日 (0=周日..6=周六)
+        weeklyResetTime: '12:19',       // 每周重置时刻 (HH:MM)
+        upgradeLabel: 'AI Plus',        // 升级卡片标题
+        upgradePrice: 'SGD 6.98/月',    // 升级卡片价格
+        upgradeMultiplier: 2,           // 升级后倍数
+    },
 };
 
 function getSettings() {
@@ -114,6 +127,16 @@ function getSettings() {
     if (!s.dailyStats || typeof s.dailyStats !== 'object') s.dailyStats = { cost: 0, tokens: 0, req: 0 };
     if (!s.budget || typeof s.budget !== 'object') s.budget = { enabled: false, dailyLimit: 0, monthlyLimit: 0 };
     if (typeof s.contextSize !== 'number') s.contextSize = 128000;
+    // ===== v1.3.0 兜底：Gemini 用量限额 =====
+    if (!s.geminiQuota || typeof s.geminiQuota !== 'object') {
+        s.geminiQuota = structuredClone(defaultSettings.geminiQuota);
+    } else {
+        // 逐字段补齐，防止旧配置缺字段
+        const dq = defaultSettings.geminiQuota;
+        for (const k of Object.keys(dq)) {
+            if (s.geminiQuota[k] === undefined) s.geminiQuota[k] = dq[k];
+        }
+    }
     return s;
 }
 
@@ -668,6 +691,66 @@ function addExtensionSettings() {
     btnRow.appendChild(resetAll);
     btnRow.appendChild(resetSession);
     wrap.appendChild(btnRow);
+
+    // ============ v1.3.0：Gemini 用量限额设置 ============
+    const qs = document.createElement('div');
+    qs.className = 'tf-quota-settings';
+    const qTitle = document.createElement('div');
+    qTitle.className = 'tf-quota-settings-title';
+    qTitle.textContent = '🧪 ' + safeT('用量限额') + ' · ' + safeT('设置');
+    qs.appendChild(qTitle);
+    const qGrid = document.createElement('div');
+    qGrid.className = 'tf-quota-settings-grid';
+    const gq = s.geminiQuota || {};
+
+    const field = (label, input) => {
+        const d = document.createElement('div');
+        d.className = 'tf-quota-field';
+        const l = document.createElement('label');
+        l.textContent = label;
+        d.appendChild(l);
+        d.appendChild(input);
+        return d;
+    };
+    const numInput = (val, onchange) => {
+        const i = document.createElement('input');
+        i.type = 'number';
+        i.value = val;
+        i.addEventListener('input', onchange);
+        return i;
+    };
+    // 开关：启用面板
+    const swQ = document.createElement('label');
+    swQ.className = 'checkbox_label';
+    const cbQ = document.createElement('input');
+    cbQ.type = 'checkbox';
+    cbQ.checked = !!gq.enabled;
+    cbQ.addEventListener('change', () => { gq.enabled = cbQ.checked; saveSettingsDebounced(); safeUpdateUI(); });
+    swQ.appendChild(cbQ);
+    swQ.appendChild(document.createTextNode(safeT('启用')));
+    qGrid.appendChild(field(safeT('显示用量限额'), swQ));
+
+    // 度量方式
+    const sel = document.createElement('select');
+    sel.innerHTML = `<option value="tokens">${safeT('次数')} (tokens)</option><option value="cost">${safeT('金额')} (cost)</option><option value="requests">${safeT('请求数')} (requests)</option>`;
+    sel.value = gq.metric || 'tokens';
+    sel.addEventListener('change', () => { gq.metric = sel.value; saveSettingsDebounced(); safeUpdateUI(); });
+    qGrid.appendChild(field(safeT('度量方式'), sel));
+
+    // 每日限额
+    qGrid.appendChild(field(safeT('每日限额'),
+        numInput(gq.dailyLimit || 0, (e) => { gq.dailyLimit = parseFloat(e.target.value) || 0; saveSettingsDebounced(); safeUpdateUI(); })));
+    // 每周限额
+    qGrid.appendChild(field(safeT('每周限额'),
+        numInput(gq.weeklyLimit || 0, (e) => { gq.weeklyLimit = parseFloat(e.target.value) || 0; saveSettingsDebounced(); safeUpdateUI(); })));
+    // 每日重置时刻
+    const rTime = document.createElement('input');
+    rTime.type = 'time';
+    rTime.value = gq.dailyResetTime || '17:19';
+    rTime.addEventListener('change', () => { gq.dailyResetTime = rTime.value || '17:19'; saveSettingsDebounced(); safeUpdateUI(); });
+    qGrid.appendChild(field(safeT('每日重置时刻'), rTime));
+    qs.appendChild(qGrid);
+    wrap.appendChild(qs);
 }
 
 /* ============================================================
@@ -931,9 +1014,195 @@ function updateDashboard() {
 
     el.innerHTML = '';
     el.appendChild(grid);
+
+    // ============ v1.3.0：Gemini 风格用量限额面板 ============
+    renderGeminiQuota(el, s);
 }
 
-// 应用主题：把 data-tf-theme 写到悬浮球弹层 & 设置面板容器
+/* ============================================================
+ *  v1.3.0 · Gemini「用量限额」一比一还原
+ * ============================================================ */
+// 计算当日周期内的用量（按当前 metric）
+function quotaMetricUsage(s, windowStartTs) {
+    const metric = (s.geminiQuota && s.geminiQuota.metric) || 'tokens';
+    // dailyStats 只有今日累计；此函数用于匹配 json mode 下的"周期内"用量
+    const d = s.dailyStats || {};
+    // 对于日周期直接用今日累计（hourly 之前的全部）
+    const now = Date.now();
+    // 简单处理：日周期内用量 = 今日累计
+    if (metric === 'cost') return d.cost || 0;
+    if (metric === 'requests') return d.req || 0;
+    return d.tokens || 0;
+}
+
+// 计算本周累计用量：累加 history 中本周发生的历史 + 今日
+function quotaWeeklyUsage(s) {
+    const cfg = s.geminiQuota || {};
+    const metric = cfg.metric || 'tokens';
+    const weekStart = weeklyResetMillis(s);
+    let sum = 0;
+    if (Array.isArray(s.history)) {
+        for (const h of s.history) {
+            if (!h || !h.date) continue;
+            const t = new Date(h.date + 'T00:00:00Z').getTime();
+            if (t >= weekStart) {
+                if (metric === 'cost') sum += h.cost || 0;
+                else if (metric === 'requests') sum += h.req || 0;
+                else sum += h.tokens || 0;
+            }
+        }
+    }
+    const d = s.dailyStats || {};
+    sum += (metric === 'cost') ? (d.cost || 0)
+        : (metric === 'requests') ? (d.req || 0) : (d.tokens || 0);
+    return sum;
+}
+
+// 计算本周起始时间戳（基于 weeklyResetDay/weeklyResetTime）
+function weeklyResetMillis(s) {
+    const cfg = s.geminiQuota || {};
+    const day = (cfg.weeklyResetDay == null) ? 4 : (cfg.weeklyResetDay % 7);
+    const wt = stringToMin((cfg.weeklyResetTime || '12:19').split(':'));
+    const now = new Date();
+    const m = new Date(now);
+    m.setHours(0, 0, 0, 0);
+    // 本周已过天数
+    let diff = (now.getDay() - day + 7) % 7;
+    m.setDate(m.getDate() - diff);
+    m.setMinutes(wt.min, wt.sec, 0, 0);
+    // 如果起始时间在未来，回退到上周
+    if (m.getTime() > now.getTime()) m.setDate(m.getDate() - 7);
+    return m.getTime();
+}
+function stringToMin(a) {
+    return { min: parseInt(a[0], 10) || 0, sec: parseInt(a[1], 10) || 0 };
+}
+// 计算今日重置时刻（基于 dailyResetTime）
+function dailyResetMillis(s) {
+    const cfg = s.geminiQuota || {};
+    const t = (cfg.dailyResetTime || '17:19').split(':');
+    const m = new Date();
+    m.setHours(parseInt(t[0], 10) || 0, parseInt(t[1], 10) || 0, 0, 0);
+    return m.getTime();
+}
+function fmtClock(s, mode) {
+    const cfg = s.geminiQuota || {};
+    let h, min, day;
+    if (mode === 'daily') {
+        const t = (cfg.dailyResetTime || '17:19').split(':');
+        h = t[0]; min = t[1];
+        return `${h}:${min}`;
+    } else {
+        const t = (cfg.weeklyResetTime || '12:19').split(':');
+        day = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][(cfg.weeklyResetDay == null ? 4 : cfg.weeklyResetDay % 7)];
+        return `${day} ${t[0]}:${t[1]}`;
+    }
+}
+
+// 渲染环形进度 SVG
+function quotaRingHTML(pct, used, limit, label, mode, s) {
+    const R = 34, C = 2 * Math.PI * R;
+    const safe = Math.max(0, Math.min(100, pct));
+    const off = C - (safe / 100) * C;
+    const tone = safe >= 100 ? 'over' : safe >= 80 ? 'warn' : '';
+    const usedStr = limit > 0 ? `${fmtCompact(s, used)} / ${fmtCompact(s, limit)}` : `${fmtCompact(s, used)}`;
+    return `
+        <div class="tf-quota-ring">
+            <div class="tf-ring">
+                <svg viewBox="0 0 78 78">
+                    <circle class="tf-ring-bg" cx="39" cy="39" r="${R}"/>
+                    <circle class="tf-ring-fg ${tone}" cx="39" cy="39" r="${R}"
+                        stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"/>
+                </svg>
+                <div class="tf-ring-center">
+                    <div class="tf-ring-pct">${Math.round(safe)}%</div>
+                    <div class="tf-ring-used">${safeT('已用')}</div>
+                </div>
+            </div>
+            <div class="tf-ring-meta">
+                <div class="tf-ring-label">${label}</div>
+                <div class="tf-ring-desc">${usedStr}</div>
+                <div class="tf-ring-reset">🔄 ${safeT('重置')} · ${fmtClock(s, mode)}</div>
+            </div>
+        </div>`;
+}
+// 格式化用量：cost -> 金额，tokens -> 万，requests -> 次
+function fmtCompact(s, v) {
+    const metric = (s.geminiQuota && s.geminiQuota.metric) || 'tokens';
+    if (metric === 'cost') return fmtMoney(s, v);
+    if (metric === 'requests') return fmtTokens(v) + ' ' + safeT('次');
+    return fmtTokens(v);
+}
+
+// 主渲染函数：Gemini 风格用量限额面板
+function renderGeminiQuota(el, s) {
+    const cfg = s.geminiQuota || {};
+    if (cfg.enabled === false) return;
+    try {
+        const wrap = document.createElement('div');
+        wrap.className = 'tf-writing';
+        // 头部
+        const head = document.createElement('div');
+        head.className = 'tf-quota-head';
+        const title = document.createElement('div');
+        title.className = 'tf-quota-title';
+        title.innerHTML = `<span class="tf-quota-icon">🧪</span>${safeT('用量限额')}`;
+        const sub = document.createElement('div');
+        sub.className = 'tf-quota-sub';
+        sub.textContent = safeT('用量限额副标题');
+        head.appendChild(title);
+        head.appendChild(sub);
+        wrap.appendChild(head);
+
+        // 两个环形：今日用量 / 每周限额
+        const rings = document.createElement('div');
+        rings.className = 'tf-quota-ring-wrap';
+
+        const dailyLimit = cfg.dailyLimit || 0;
+        const dailyUsed = quotaMetricUsage(s, dailyResetMillis(s));
+        const dPct = dailyLimit > 0 ? (dailyUsed / dailyLimit) * 100 : 0;
+        rings.innerHTML = quotaRingHTML(dPct, dailyUsed, dailyLimit, safeT('当前用量'), 'daily', s);
+
+        const weeklyLimit = cfg.weeklyLimit || 0;
+        const weeklyUsed = quotaWeeklyUsage(s);
+        const wPct = weeklyLimit > 0 ? (weeklyUsed / weeklyLimit) * 100 : 0;
+        rings.insertAdjacentHTML('beforeend', quotaRingHTML(wPct, weeklyUsed, weeklyLimit, safeT('每周限额'), 'weekly', s));
+        wrap.appendChild(rings);
+
+        // 升级卡片
+        const up = document.createElement('div');
+        up.className = 'tf-quota-upgrade';
+        const info = document.createElement('div');
+        info.className = 'tf-quota-upgrade-info';
+        const emoji = document.createElement('div');
+        emoji.className = 'tf-quota-upgrade-emoji';
+        emoji.textContent = '⚡';
+        const text = document.createElement('div');
+        text.className = 'tf-quota-upgrade-text';
+        const tb = document.createElement('b');
+        tb.textContent = safeT('升级用量限额标题').replace('{n}', cfg.upgradeMultiplier || 2);
+        const ts = document.createElement('span');
+        ts.textContent = safeT('升级用量限额副标题');
+        text.appendChild(tb);
+        text.appendChild(ts);
+        info.appendChild(emoji);
+        info.appendChild(text);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tf-quota-upgrade-btn';
+        btn.textContent = safeT('升级');
+        btn.addEventListener('click', () => {
+            console.log(`[TokenFlow] quota upgrade: ${cfg.upgradeLabel} ${cfg.upgradePrice}`);
+        });
+        up.appendChild(info);
+        up.appendChild(btn);
+        wrap.appendChild(up);
+
+        el.appendChild(wrap);
+    } catch (e) {
+        console.warn('[TokenFlow] renderGeminiQuota:', e);
+    }
+}
 function applyTheme() {
     try {
         const s = getSettings();
