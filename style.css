@@ -137,7 +137,7 @@
     font-size: 24px;
     font-weight: 700;
     line-height: 1.2;
-    background: linear-gradient(90deg, #5eead4, #93c5fd, #c4b5fd);
+    background: var(--tf-grad-main, linear-gradient(90deg, #5eead4, #93c5fd, #c4b5fd));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -242,7 +242,7 @@
 .tf-model-cost {
     font-weight: 700;
     font-size: 14px;
-    background: linear-gradient(90deg, #fda4af, #fcd34d);
+        background: var(--tf-grad-cost, linear-gradient(90deg, #fda4af, #fcd34d));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -294,8 +294,8 @@
 }
 .tf-writing-cell:hover {
     transform: translateY(-2px);
-    border-color: color-mix(in srgb, #5eead4 55%, transparent);
-    box-shadow: 0 6px 18px color-mix(in srgb, #5eead4 12%, transparent);
+    border-color: color-mix(in srgb, var(--tf-accent, #5eead4) 55%, transparent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--tf-accent, #5eead4) 12%, transparent);
 }
 .tf-writing-val {
     font-size: 20px;
@@ -324,9 +324,9 @@
     padding: 10px 14px;
     border-radius: 10px;
     font-size: 12px;
-    background: color-mix(in srgb, #5eead4 8%, transparent);
-    border-left: 3px solid #5eead4;
-    color: color-mix(in srgb, var(--SmartThemeBodyColor, #ddd) 92%, #5eead4);
+    background: color-mix(in srgb, var(--tf-accent, #5eead4) 8%, transparent);
+    border-left: 3px solid var(--tf-accent, #5eead4);
+    color: color-mix(in srgb, var(--SmartThemeBodyColor, #ddd) 92%, var(--tf-accent, #5eead4));
     letter-spacing: 0.02em;
     animation: tfTipPulse 3s ease-in-out infinite;
 }
@@ -405,13 +405,13 @@
 }
 
 .tf-orb.is-open {
-    box-shadow: 0 0 0 3px color-mix(in srgb, #5eead4 45%, transparent), 0 18px 45px rgba(0, 0, 0, 0.42);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tf-accent, #5eead4) 45%, transparent), 0 18px 45px rgba(0, 0, 0, 0.42);
 }
 
 .tf-orb-icon {
     font-size: 22px;
-    color: #5eead4;
-    text-shadow: 0 2px 10px rgba(94, 234, 212, 0.5);
+    color: var(--tf-accent, #5eead4);
+    text-shadow: 0 2px 10px color-mix(in srgb, var(--tf-accent, #5eead4) 50%, transparent);
 }
 
 .tf-orb-badge {
@@ -478,7 +478,7 @@
 .tf-panel-title b {
     font-size: 16px;
     font-weight: 700;
-    background: linear-gradient(90deg, #5eead4, #93c5fd);
+    background: var(--tf-grad-main, linear-gradient(90deg, #5eead4, #93c5fd));
     -webkit-background-clip: text;
     background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -542,8 +542,8 @@
     width: 100%;
     max-width: 22px;
     border-radius: 6px 6px 2px 2px;
-    background: linear-gradient(180deg, #5eead4, #93c5fd);
-    box-shadow: 0 2px 10px color-mix(in srgb, #5eead4 30%, transparent);
+    background: linear-gradient(180deg, var(--tf-accent, #5eead4), var(--tf-accent2, #93c5fd));
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--tf-accent, #5eead4) 30%, transparent);
     transition: height 0.4s ease;
     min-height: 4px;
 }
@@ -592,4 +592,168 @@
 @keyframes tfAlertPulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.25); }
+}
+
+/* ============================================================
+ *  v1.2.0 · 五套大师级主题系统
+ *  通过容器上的 data-tf-theme 属性触发，变量驱动 + 装饰纹理
+ * ============================================================ */
+
+/* --- 主题切换器 --- */
+.tf-theme-picker {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.tf-theme-chip {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,0.3));
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 60%, transparent);
+    color: var(--SmartThemeBodyColor, #ccc);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    opacity: 0.8;
+}
+.tf-theme-chip:hover {
+    transform: translateY(-1px);
+    opacity: 1;
+}
+.tf-theme-chip.active {
+    border-color: var(--tf-accent, #5eead4);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--tf-accent, #5eead4) 35%, transparent);
+    color: var(--tf-accent, #5eead4);
+    opacity: 1;
+}
+.tf-theme-chip .tf-theme-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+    box-shadow: 0 0 6px color-mix(in srgb, currentColor 60%, transparent);
+}
+
+/* ============ 主题 1 · 「赛博帝京」 Cyber Imperial ============
+ *  高饱和霓虹电光 × 帝都红金重彩，硬核赛博朋克帝王气场 */
+[data-tf-theme="cyber-royal"] {
+    --tf-accent: #ff2d95;
+    --tf-accent2: #00e5ff;
+    --tf-grad-main: linear-gradient(90deg, #ff2d95, #ffb300, #00e5ff);
+    --tf-grad-cost: linear-gradient(90deg, #00e5ff, #ff2d95);
+    --tf-glow: rgba(255, 45, 149, 0.55);
+}
+[data-tf-theme="cyber-royal"] .tf-stat-card,
+[data-tf-theme="cyber-royal"] .tf-writing,
+[data-tf-theme="cyber-royal"] .tf-trend,
+[data-tf-theme="cyber-royal"] .tf-model-table {
+    border-color: color-mix(in srgb, var(--tf-accent) 30%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tf-accent) 12%, transparent), 0 0 22px color-mix(in srgb, var(--tf-accent) 10%, transparent);
+}
+[data-tf-theme="cyber-royal"].tf-panel {
+    background:
+        radial-gradient(circle at 15% 20%, color-mix(in srgb, #ff2d95 15%, transparent), transparent 40%),
+        radial-gradient(circle at 85% 80%, color-mix(in srgb, #00e5ff 14%, transparent), transparent 45%),
+        linear-gradient(135deg, #12051f, #0a0a1e 60%, #071026);
+}
+
+/* ============ 主题 2 · 「水墨禅境」 Ink Zen ============
+ *  留白诗意的国风水墨，冷灰青黛，克制而深邃的文人气质 */
+[data-tf-theme="ink-zen"] {
+    --tf-accent: #8aa8b8;
+    --tf-accent2: #4a6b7a;
+    --tf-grad-main: linear-gradient(90deg, #f5f0e8, #b8c6cc, #8aa8b8);
+    --tf-grad-cost: linear-gradient(90deg, #8aa8b8, #4a6b7a);
+    --tf-glow: rgba(138, 168, 184, 0.45);
+}
+[data-tf-theme="ink-zen"] .tf-stat-card,
+[data-tf-theme="ink-zen"] .tf-writing,
+[data-tf-theme="ink-zen"] .tf-trend,
+[data-tf-theme="ink-zen"] .tf-model-table {
+    background: linear-gradient(160deg, rgba(30, 40, 46, 0.85), rgba(18, 26, 30, 0.92));
+}
+[data-tf-theme="ink-zen"].tf-panel {
+    background: radial-gradient(circle at 70% 15%, rgba(138, 168, 184, 0.12), transparent 45%), #1a2226;
+}
+
+/* ============ 主题 3 · 「午夜极光」 Midnight Aurora ============
+ *  北极夜空极光渐变，深邃蓝紫流淌的静谧与神秘 */
+[data-tf-theme="aurora-midnight"] {
+    --tf-accent: #7df9ff;
+    --tf-accent2: #b388ff;
+    --tf-grad-main: linear-gradient(90deg, #7df9ff, #66d9ff, #b388ff);
+    --tf-grad-cost: linear-gradient(90deg, #ff6ec7, #7df9ff);
+    --tf-glow: rgba(125, 249, 255, 0.5);
+}
+[data-tf-theme="aurora-midnight"] .tf-stat-card,
+[data-tf-theme="aurora-midnight"] .tf-writing,
+[data-tf-theme="aurora-midnight"] .tf-trend,
+[data-tf-theme="aurora-midnight"] .tf-model-table {
+    border-color: color-mix(in srgb, var(--tf-accent) 26%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tf-accent) 10%, transparent), 0 0 26px color-mix(in srgb, var(--tf-accent) 8%, transparent);
+}
+[data-tf-theme="aurora-midnight"].tf-panel {
+    background:
+        radial-gradient(ellipse at 20% 100%, rgba(124, 249, 255, 0.18), transparent 50%),
+        radial-gradient(ellipse at 80% 0%, rgba(179, 136, 255, 0.2), transparent 50%),
+        linear-gradient(160deg, #060b1c, #0d1230 55%, #1a0e33);
+}
+
+/* ============ 主题 4 · 「熔金斜阳」 Molten Gold ============
+ *  熔岩黄金落日，琥珀橙金炽热燃烧的能量张力 */
+[data-tf-theme="molten-gold"] {
+    --tf-accent: #ffb347;
+    --tf-accent2: #ff6a3d;
+    --tf-grad-main: linear-gradient(90deg, #ffe29a, #ffb347, #ff6a3d);
+    --tf-grad-cost: linear-gradient(90deg, #ff6a3d, #ffd34d);
+    --tf-glow: rgba(255, 179, 71, 0.5);
+}
+[data-tf-theme="molten-gold"] .tf-stat-card,
+[data-tf-theme="molten-gold"] .tf-writing,
+[data-tf-theme="molten-gold"] .tf-trend,
+[data-tf-theme="molten-gold"] .tf-model-table {
+    border-color: color-mix(in srgb, var(--tf-accent) 32%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tf-accent) 14%, transparent), 0 0 24px color-mix(in srgb, var(--tf-accent) 12%, transparent);
+}
+[data-tf-theme="molten-gold"].tf-panel {
+    background:
+        radial-gradient(circle at 80% 15%, rgba(255, 179, 71, 0.22), transparent 45%),
+        radial-gradient(circle at 15% 90%, rgba(255, 106, 61, 0.18), transparent 45%),
+        linear-gradient(150deg, #2a1602, #351a05 60%, #1f0f04);
+}
+
+/* ============ 主题 5 · 「纯白极简」 Monochrome ============
+ *  但见其白，近于无相；极简科技医院式纯净灰白，专注数据本质 */
+[data-tf-theme="mono-white"] {
+    --tf-accent: #64748b;
+    --tf-accent2: #94a3b8;
+    --tf-grad-main: linear-gradient(90deg, #e2e8f0, #cbd5e1, #94a3b8);
+    --tf-grad-cost: linear-gradient(90deg, #cbd5e1, #64748b);
+    --tf-glow: rgba(148, 163, 184, 0.4);
+}
+[data-tf-theme="mono-white"] .tf-stat-card,
+[data-tf-theme="mono-white"] .tf-writing,
+[data-tf-theme="mono-white"] .tf-trend,
+[data-tf-theme="mono-white"] .tf-model-table {
+    background: linear-gradient(155deg, #f8fafc, #eef2f7);
+    border-color: rgba(100, 116, 139, 0.25);
+    box-shadow: 0 6px 20px rgba(100, 116, 139, 0.12);
+}
+[data-tf-theme="mono-white"] .tf-stat-value,
+[data-tf-theme="mono-white"] .tf-writing-val {
+    color: #334155;
+    -webkit-text-fill-color: #334155;
+}
+[data-tf-theme="mono-white"].tf-panel {
+    background: linear-gradient(150deg, #ffffff, #f1f5f9);
+    border-color: #cbd5e1;
+}
+[data-tf-theme="mono-white"] .tf-panel-title b {
+    color: #334155;
+    -webkit-text-fill-color: #334155;
 }

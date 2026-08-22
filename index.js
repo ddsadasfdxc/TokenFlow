@@ -70,6 +70,8 @@ const defaultSettings = {
     lastDailyReport: '',               // 记录最近一次简报日期，避免重复
     autoArchive: true,                 // 是否自动归档
     archiveDays: 30,                   // 历史归档保留天数
+    // ===== v1.2.0：五套大师级主题 =====
+    theme: 'aurora-midnight',          // 默认主题
 };
 
 function getSettings() {
@@ -540,6 +542,35 @@ function addExtensionSettings() {
     sw3.appendChild(document.createTextNode(safeT('本地估算兜底')));
     row(span(safeT('估算兜底')), sw3);
 
+    // ===== v1.2.0：五套大师级主题切换器 =====
+    const THEMES = [
+        { id: 'cyber-royal',     name: '赛博帝京', dot: '#ff2d95' },
+        { id: 'ink-zen',         name: '水墨禅境', dot: '#8aa8b8' },
+        { id: 'aurora-midnight', name: '午夜极光', dot: '#7df9ff' },
+        { id: 'molten-gold',     name: '熔金斜阳', dot: '#ffb347' },
+        { id: 'mono-white',      name: '纯白极简', dot: '#64748b' },
+    ];
+    const themeRow = document.createElement('div');
+    themeRow.className = 'tf-theme-picker';
+    for (const th of THEMES) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'tf-theme-chip';
+        chip.setAttribute('data-theme', th.id);
+        chip.innerHTML = `<span class="tf-theme-dot" style="background:${th.dot};color:${th.dot}"></span>${safeT(th.name)}`;
+        if (s.theme === th.id) chip.classList.add('active');
+        chip.addEventListener('click', () => {
+            s.theme = th.id;
+            // 更新激活态
+            themeRow.querySelectorAll('.tf-theme-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            applyTheme();
+            saveSettingsDebounced();
+        });
+        themeRow.appendChild(chip);
+    }
+    row(span(safeT('主题')), themeRow);
+
     // 币种 + 汇率
     row(span(safeT('显示币种')),
         makeInput('tf_currency', 'text', s.displayCurrency, () => {
@@ -644,6 +675,7 @@ function addExtensionSettings() {
  * ============================================================ */
 
 function updateDashboard() {
+    applyTheme();
     // 优先渲染到悬浮球弹层（主统计页），回退到设置面板内嵌容器
     const el = document.getElementById('token_flow_panel_body') || document.getElementById('token_flow_dashboard');
     if (!el) return;
@@ -899,6 +931,27 @@ function updateDashboard() {
 
     el.innerHTML = '';
     el.appendChild(grid);
+}
+
+// 应用主题：把 data-tf-theme 写到悬浮球弹层 & 设置面板容器
+function applyTheme() {
+    try {
+        const s = getSettings();
+        const theme = s.theme || 'aurora-midnight';
+        const containers = [
+            document.getElementById('token_flow_panel'),
+            document.getElementById('token_flow_drawer'),
+            document.getElementById('token_flow_dashboard'),
+        ];
+        for (const el of containers) {
+            if (el) el.setAttribute('data-tf-theme', theme);
+        }
+        // 同步悬浮球图标用色（可选）
+        const orbIcon = document.querySelector('.tf-orb-icon');
+        if (orbIcon) orbIcon.style.color = 'var(--tf-accent, #5eead4)';
+    } catch (e) {
+        console.warn('[TokenFlow] applyTheme:', e);
+    }
 }
 
 function safeUpdateUI() {

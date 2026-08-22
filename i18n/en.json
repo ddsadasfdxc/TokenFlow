@@ -102,5 +102,11 @@
     "导入数据": "Import Data",
     "导入成功": "Import succeeded",
     "导入失败：格式不合法": "Import failed: invalid format",
-    "导入失败": "Import failed"
+    "导入失败": "Import failed",
+    "主题": "Theme",
+    "赛博帝京": "Cyber Imperial",
+    "水墨禅境": "Ink Zen",
+    "午夜极光": "Midnight Aurora",
+    "熔金斜阳": "Molten Gold",
+    "纯白极简": "Pure White"
 }
