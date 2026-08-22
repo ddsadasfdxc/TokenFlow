@@ -29,24 +29,24 @@ const STREAM_DONE = '[DONE]';
 // Kimi 官方为 CNY，已按 ~7.1 汇率折算为 USD 基准
 const PRESET_MODELS = [
     // OpenAI · ChatGPT 5.6 系列（3 档）
-    { name: 'gpt-5.6-sol',        input: 5.00, output: 30.00, cached: 0.50,   perRequest: 0 },
-    { name: 'gpt-5.6-terra',      input: 2.50, output: 15.00, cached: 0.25,   perRequest: 0 },
-    { name: 'gpt-5.6-luna',       input: 1.00, output: 6.00,  cached: 0.10,   perRequest: 0 },
+    { name: 'gpt-5.6-sol',        input: 5.00, output: 30.00, cached: 0.50,   perRequest: 0, multiplier: 1 },
+    { name: 'gpt-5.6-terra',      input: 2.50, output: 15.00, cached: 0.25,   perRequest: 0, multiplier: 1 },
+    { name: 'gpt-5.6-luna',       input: 1.00, output: 6.00,  cached: 0.10,   perRequest: 0, multiplier: 1 },
     // Google · Gemini
-    { name: 'gemini-3.1-pro',     input: 2.00, output: 12.00, cached: 0.40,   perRequest: 0 },
-    { name: 'gemini-3.5-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0 },
-    { name: 'gemini-3.6-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0 },
-    { name: 'gemini-3.7-flash',   input: 0.75, output: 3.75,  cached: 0.15,   perRequest: 0 },
+    { name: 'gemini-3.1-pro',     input: 2.00, output: 12.00, cached: 0.40,   perRequest: 0, multiplier: 1 },
+    { name: 'gemini-3.5-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0, multiplier: 1 },
+    { name: 'gemini-3.6-flash',   input: 1.50, output: 7.50,  cached: 0.30,   perRequest: 0, multiplier: 1 },
+    { name: 'gemini-3.7-flash',   input: 0.75, output: 3.75,  cached: 0.15,   perRequest: 0, multiplier: 1 },
     // Anthropic
-    { name: 'claude-opus-4.6',    input: 15.00, output: 75.00, cached: 1.50,  perRequest: 0 },
-    { name: 'claude-sonnet-4.6',  input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
+    { name: 'claude-opus-4.6',    input: 15.00, output: 75.00, cached: 1.50,  perRequest: 0, multiplier: 1 },
+    { name: 'claude-sonnet-4.6',  input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0, multiplier: 1 },
     // DeepSeek · V4 全系列（快Flash/Pro，均含正式版与预览版；高峰价基准，CNY→USD@7.1）
     // 官方：自2026-08-17起峰谷定价，高峰(9-12,14-18时)为淡季2倍。此处取高峰"缓存未命中输入+输出"为基准
-    { name: 'deepseek-v4-flash',  input: 0.42, output: 1.27,  cached: 0.014, perRequest: 0 },
-    { name: 'deepseek-v4-pro',    input: 1.27, output: 3.80,  cached: 0.042, perRequest: 0 },
+    { name: 'deepseek-v4-flash',  input: 0.42, output: 1.27,  cached: 0.014, perRequest: 0, multiplier: 1 },
+    { name: 'deepseek-v4-pro',    input: 1.27, output: 3.80,  cached: 0.042, perRequest: 0, multiplier: 1 },
     // Kimi (月之暗面，CNY→USD @7.1)
-    { name: 'kimi-k3',            input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0 },
-    { name: 'kimi-k2.6',          input: 0.95, output: 4.00,  cached: 0.10,   perRequest: 0 },
+    { name: 'kimi-k3',            input: 3.00, output: 15.00, cached: 0.30,   perRequest: 0, multiplier: 1 },
+    { name: 'kimi-k2.6',          input: 0.95, output: 4.00,  cached: 0.10,   perRequest: 0, multiplier: 1 },
 ];
 
 const defaultSettings = {
@@ -124,6 +124,12 @@ function getSettings() {
     }
     if (!s.stats || typeof s.stats !== 'object') s.stats = structuredClone(defaultSettings.stats);
     if (!s.session || typeof s.session !== 'object') s.session = structuredClone(defaultSettings.session);
+    // ===== v1.6.0 兜底：每个模型倍率（缺省 x1）=====
+    if (Array.isArray(s.models)) {
+        for (const mx of s.models) {
+            if (mx && (typeof mx.multiplier !== 'number' || !(mx.multiplier > 0))) mx.multiplier = 1;
+        }
+    }
     if (!s.stats.models) s.stats.models = {};
     if (!s.session.models) s.session.models = {};
     // ===== v1.1.0 兜底：历史归档 / 预算 / 上下文 =====
@@ -170,11 +176,14 @@ function calcCost(settings, model, inTok, outTok, cachedTok, requests = 1) {
         (outTok / 1e6) * (price.output || 0) +
         (cachedTok / 1e6) * (price.cached || 0);
     const reqCost = (price.perRequest || 0) * requests;
-    const usd = tokenCost + reqCost;
+    const rawUsd = tokenCost + reqCost;
+    const mult = (typeof price.multiplier === 'number' && price.multiplier > 0) ? price.multiplier : 1;
+    const usd = rawUsd * mult;
     return {
         usd,
         display: usd * settings.exchangeRate,
         price,
+        multiplier: mult,
     };
 }
 
@@ -259,7 +268,7 @@ function _normRPM(s) {
     return s.rpm;
 }
 
-// 实时 RPM：最近 60 秒内的请求数（滑窗），并做惰性裁剪
+// 实时 RPM：最近 60 秒内的请求数（滑窗），��做惰性裁剪
 function getRPM(s) {
     const r = _normRPM(s);
     const now = Date.now();
@@ -654,7 +663,7 @@ function addExtensionSettings() {
     const table = document.createElement('table');
     table.className = 'tf-price-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th></th></tr>';
+    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th>' + safeT('倍率 (x)') + '</th><th></th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
 
@@ -686,6 +695,24 @@ function addExtensionSettings() {
                 tr.appendChild(td);
             }
 
+            // 倍率限制（v1.6.0）：默认 x1，可设为 x0.5/x2 等调整该模型计费成本
+            const tdMult = document.createElement('td');
+            const multInp = document.createElement('input');
+            multInp.className = 'text_pole tf-num';
+            multInp.type = 'number';
+            multInp.step = 'any';
+            multInp.min = '0.01';
+            multInp.value = (typeof m.multiplier === 'number' && m.multiplier > 0) ? m.multiplier : 1;
+            multInp.title = safeT('倍率限制，默认x1，用于调整计费成本');
+            multInp.addEventListener('input', () => {
+                const v = parseFloat(multInp.value);
+                m.multiplier = (!isNaN(v) && v > 0) ? v : 1;
+                if (isNaN(v) || v <= 0) multInp.value = 1;
+                saveSettingsDebounced(); updateDashboard();
+            });
+            tdMult.appendChild(multInp);
+            tr.appendChild(tdMult);
+
             const tdDel = document.createElement('td');
             const delBtn = document.createElement('button');
             delBtn.textContent = '✕';
@@ -709,7 +736,7 @@ function addExtensionSettings() {
     addBtn.textContent = '+' + safeT('添加模型');
     addBtn.className = 'menu_button';
     addBtn.addEventListener('click', () => {
-        s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0 });
+        s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0, multiplier: 1 });
         saveSettingsDebounced(); renderRows();
     });
     wrap.appendChild(addBtn);
@@ -1091,6 +1118,18 @@ function updateDashboard() {
             meta.textContent = `${fmtTokens(m.in + m.out + m.cached)} · ${m.req} ${safeT('次')}${estMark}`;
             topLine.appendChild(rank);
             topLine.appendChild(nameEl);
+            // v1.6.0：非默认倍率徽标
+            do {
+                const pm = getPriceFor(s, key);
+                const mv = (pm && typeof pm.multiplier === 'number' && pm.multiplier !== 1) ? pm.multiplier : null;
+                if (mv) {
+                    const badge = document.createElement('span');
+                    badge.className = 'tf-mult-badge';
+                    badge.textContent = '× ' + mv;
+                    badge.title = safeT('倍率限制，默认x1，用于调整计费成本');
+                    topLine.appendChild(badge);
+                }
+            } while (false);
             topLine.appendChild(meta);
             const bar = document.createElement('div');
             bar.className = 'tf-model-bar';
@@ -1776,7 +1815,7 @@ function addExtensionSettingsInto(content) {
     const table = document.createElement('table');
     table.className = 'tf-price-table';
     const thead = document.createElement('thead');
-    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th></th></tr>';
+    thead.innerHTML = '<tr><th>' + safeT('模型') + '</th><th>' + safeT('输入 $/1M') + '</th><th>' + safeT('输出 $/1M') + '</th><th>' + safeT('缓存 $/1M') + '</th><th>' + safeT('按次 $') + '</th><th>' + safeT('倍率 (x)') + '</th><th></th></tr>';
     table.appendChild(thead);
     const tbody = document.createElement('tbody');
 
@@ -1808,6 +1847,24 @@ function addExtensionSettingsInto(content) {
                 tr.appendChild(td);
             }
 
+            // 倍率限制（v1.6.0）：默认 x1，可设为 x0.5/x2 等调整该模型计费成本
+            const tdMult = document.createElement('td');
+            const multInp = document.createElement('input');
+            multInp.className = 'text_pole tf-num';
+            multInp.type = 'number';
+            multInp.step = 'any';
+            multInp.min = '0.01';
+            multInp.value = (typeof m.multiplier === 'number' && m.multiplier > 0) ? m.multiplier : 1;
+            multInp.title = safeT('倍率限制，默认x1，用于调整计费成本');
+            multInp.addEventListener('input', () => {
+                const v = parseFloat(multInp.value);
+                m.multiplier = (!isNaN(v) && v > 0) ? v : 1;
+                if (isNaN(v) || v <= 0) multInp.value = 1;
+                saveSettingsDebounced(); updateDashboard();
+            });
+            tdMult.appendChild(multInp);
+            tr.appendChild(tdMult);
+
             const tdDel = document.createElement('td');
             const delBtn = document.createElement('button');
             delBtn.textContent = '✕';
@@ -1831,7 +1888,7 @@ function addExtensionSettingsInto(content) {
     addBtn.textContent = '+' + safeT('添加模型');
     addBtn.className = 'menu_button';
     addBtn.addEventListener('click', () => {
-        s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0 });
+        s.models.push({ name: 'new-model', input: 0, output: 0, cached: 0, perRequest: 0, multiplier: 1 });
         saveSettingsDebounced(); renderRows();
     });
     wrap.appendChild(addBtn);

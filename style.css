@@ -1203,3 +1203,23 @@
     opacity: .55;
     text-align: right;
 }
+
+/* ============================================================
+ *  v1.6.0 · 模型倍率徽标（非默认倍率时显示 ×N）
+ * ============================================================ */
+.tf-mult-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+    color: var(--tf-accent, #5eead4);
+    background: color-mix(in srgb, var(--tf-accent, #5eead4) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tf-accent, #5eead4) 32%, transparent);
+}
+.tf-model-name + .tf-mult-badge {
+    margin-left: 4px;
+}
