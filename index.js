@@ -62,6 +62,14 @@ const defaultSettings = {
     stats: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     session: { models: {}, totalCost: 0, totalTokens: 0, totalRequests: 0 },
     sessionStartedAt: Date.now(),
+    // ===== v1.1.0 增强：历史归档 + 预算 + 上下文监控 =====
+    history: [],                       // 按日归档 [{date, cost, tokens, req}]
+    dailyStats: {},                    // 今日累计 {cost, tokens, req}
+    budget: { enabled: false, dailyLimit: 0, monthlyLimit: 0 },
+    contextSize: 128000,               // 默认上下文窗口（可编辑）
+    lastDailyReport: '',               // 记录最近一次简报日期，避免重复
+    autoArchive: true,                 // 是否自动归档
+    archiveDays: 30,                   // 历史归档保留天数
 };
 
 function getSettings() {
@@ -95,10 +103,15 @@ function getSettings() {
         s.modelVersion = defaultSettings.modelVersion;
         saveSettingsDebounced();
     }
-if (!s.stats || typeof s.stats !== 'object') s.stats = structuredClone(defaultSettings.stats);
+    if (!s.stats || typeof s.stats !== 'object') s.stats = structuredClone(defaultSettings.stats);
     if (!s.session || typeof s.session !== 'object') s.session = structuredClone(defaultSettings.session);
     if (!s.stats.models) s.stats.models = {};
     if (!s.session.models) s.session.models = {};
+    // ===== v1.1.0 兜底：历史归档 / 预算 / 上下文 =====
+    if (!Array.isArray(s.history)) s.history = [];
+    if (!s.dailyStats || typeof s.dailyStats !== 'object') s.dailyStats = { cost: 0, tokens: 0, req: 0 };
+    if (!s.budget || typeof s.budget !== 'object') s.budget = { enabled: false, dailyLimit: 0, monthlyLimit: 0 };
+    if (typeof s.contextSize !== 'number') s.contextSize = 128000;
     return s;
 }
 
@@ -174,7 +187,7 @@ function recordUsage(model, inTok, outTok, cachedTok, isEstimate, requests = 1) 
         m.req += requests;
         if (isEstimate) m.est += 1;
 
-        const cost = calcCost(s, key, inTok, outTok, cachedTok, requests);
+            const cost = calcCost(s, key, inTok, outTok, cachedTok, requests);
         m.cost += cost.usd;
 
         bucket.totalTokens = (bucket.totalTokens || 0) + (inTok || 0) + (outTok || 0) + (cachedTok || 0);
@@ -182,8 +195,134 @@ function recordUsage(model, inTok, outTok, cachedTok, isEstimate, requests = 1) 
         bucket.totalCost = (bucket.totalCost || 0) + cost.usd;
     }
 
+    recordDailyUsage(s, cost.usd, inTok + outTok + cachedTok, requests, isEstimate);
+    checkBudgetAlert(s, cost.usd);
+    maybeArchive(s);
+
     saveSettingsDebounced();
     safeUpdateUI();
+    updateOrbBadge();
+    maybeDailyReport();
+}
+
+/* ============================================================
+ *  v1.1.0 新增：每日/历史归档、预算、趋势、上下文监控
+ * ============================================================ */
+
+function _todayStr(d = new Date()) {
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+}
+
+// 每日统计：按自然日累积
+function recordDailyUsage(s, costUsd, tokens, req, isEstimate) {
+    if (!s.dailyStats || typeof s.dailyStats !== 'object') s.dailyStats = { cost: 0, tokens: 0, req: 0 };
+    s.dailyStats.cost = (s.dailyStats.cost || 0) + costUsd;
+    s.dailyStats.tokens = (s.dailyStats.tokens || 0) + (tokens || 0);
+    s.dailyStats.req = (s.dailyStats.req || 0) + (req || 0);
+    // 会话开始日期追踪（用于换天重置）
+    s.dailyStats.date = s.dailyStats.date || _todayStr();
+    if (s.dailyStats.date !== _todayStr()) {
+        s.dailyStats = { cost: costUsd, tokens: tokens || 0, req: req || 0, date: _todayStr(), est: isEstimate ? 1 : 0 };
+    } else if (isEstimate) {
+        s.dailyStats.est = (s.dailyStats.est || 0) + 1;
+    }
+}
+
+// 预算预警：超过 80%/100% 阈值 → 悬浮球角标 + 控制台提示
+function checkBudgetAlert(s, costUsd) {
+    if (!s.budget || !s.budget.enabled) return;
+    const dailyLimit = s.budget.dailyLimit || 0;
+    const dailyCost = (s.dailyStats && s.dailyStats.cost) || 0;
+    if (dailyLimit > 0 && dailyCost >= dailyLimit) {
+        setOrbAlert('over_daily');
+    } else if (dailyLimit > 0 && dailyCost >= dailyLimit * 0.8) {
+        setOrbAlert('warn_daily');
+    }
+    // 月度预算基于 history 累加
+    const monthStr = _todayStr().slice(0, 7);
+    const monthlyCost = s.history.filter(h => (h.date || '').startsWith(monthStr))
+        .reduce((a, h) => a + (h.cost || 0), 0) + dailyCost;
+    const monthlyLimit = s.budget.monthlyLimit || 0;
+    if (monthlyLimit > 0 && monthlyCost >= monthlyLimit) setOrbAlert('over_month');
+    else if (monthlyLimit > 0 && monthlyCost >= monthlyLimit * 0.8) setOrbAlert('warn_month');
+}
+
+// 按日归档：每日记账一条，保留 archiveDays
+function maybeArchive(s) {
+    if (s.autoArchive === false) return;
+    const today = _todayStr();
+    if (!Array.isArray(s.history)) s.history = [];
+    let rec = s.history.find(h => h.date === today);
+    if (!rec) {
+        rec = { date: today, cost: 0, tokens: 0, req: 0 };
+        s.history.push(rec);
+    }
+    rec.cost = (rec.cost || 0) + (s.dailyStats ? s.dailyStats.cost : 0);
+    rec.tokens = (rec.tokens || 0) + (s.dailyStats ? s.dailyStats.tokens : 0);
+    rec.req = (rec.req || 0) + (s.dailyStats ? s.dailyStats.req : 0);
+    // 保留最近 N 天
+    const cutoff = Date.now() - (s.archiveDays || 30) * 86400000;
+    s.history = s.history.filter(h => new Date(h.date + 'T00:00:00').getTime() >= cutoff);
+}
+
+// 上下文占用监控（估算当前聊天上下文 token 占用比例）
+function contextUsagePercent() {
+    const s = getSettings();
+    const ctx = s.contextSize || 128000;
+    const chatArr = (() => { try { return getContext()?.chat || globalThis.chat || []; } catch { return []; } })();
+    let est = 0;
+    if (Array.isArray(chatArr)) {
+        for (const msg of chatArr) {
+            if (!msg || typeof msg !== 'object') continue;
+            est += estimateTokens(msg.mes || msg.content || msg.name || '');
+        }
+    }
+    return { used: est, limit: ctx, pct: Math.min(100, (est / ctx) * 100) };
+}
+
+// 浮动球角标
+function setOrbAlert(mode) {
+    const s = getSettings();
+    if (s.showOrb === false) return;
+    const orbBadge = document.getElementById('token_flow_orb_badge');
+    if (!orbBadge) return;
+    orbBadge.style.display = '';
+    orbBadge.textContent = '!';
+    orbBadge.classList.add('tf-alert');
+    orbBadge.setAttribute('data-mode', mode);
+}
+
+function clearOrbAlert() {
+    const orbBadge = document.getElementById('token_flow_orb_badge');
+    if (orbBadge) { orbBadge.style.display = 'none'; orbBadge.classList.remove('tf-alert'); }
+}
+
+function updateOrbBadge() {
+    const s = getSettings();
+    if (s.showOrb === false) { clearOrbAlert(); return; }
+    const badge = document.getElementById('token_flow_orb_badge');
+    if (!badge) return;
+    const dailyCost = (s.dailyStats && s.dailyStats.cost) || 0;
+    // 有预算预警时显示预警角标，否则显示今日费用
+    if (badge.classList.contains('tf-alert')) return;
+    if (dailyCost > 0) {
+        badge.style.display = '';
+        badge.textContent = fmtMoney(s, dailyCost);
+    } else {
+        badge.style.display = 'none';
+    }
+}
+
+// 每日用量简报（写入聊天流提示，可关闭）
+function maybeDailyReport() {
+    const s = getSettings();
+    const today = _todayStr();
+    if (s.lastDailyReport === today) return;
+    s.lastDailyReport = today;
+    // 仅当日有记录时展示一次
+    if (!s.dailyStats || (s.dailyStats.cost || 0) <= 0) return;
+    console.log(`[TokenFlow] 今日用量简报: ${fmtMoney(s, s.dailyStats.cost)} · ${fmtTokens(s.dailyStats.tokens)} tokens · ${s.dailyStats.req} 请求`);
 }
 
 /* ============================================================
@@ -608,6 +747,90 @@ function updateDashboard() {
     wTip.textContent = `🎯 ${allChars.toLocaleString()} ${safeT('字约相当于')} 【${theBook.name}】 ${bookQty} ${safeT('本')}`;
     writingBlock.appendChild(wTip);
     grid.appendChild(writingBlock);
+
+    // ============ v1.1.0：每日用量趋势图（近 14 天柱状图） ============
+    const trendBlock = document.createElement('div');
+    trendBlock.className = 'tf-trend';
+    const trendTitle = document.createElement('div');
+    trendTitle.className = 'tf-writing-title';
+    trendTitle.textContent = '📈 ' + safeT('近期用量趋势') + ' (14d)';
+    trendBlock.appendChild(trendTitle);
+    const trendBars = document.createElement('div');
+    trendBars.className = 'tf-trend-bars';
+    const hist = Array.isArray(s.history) ? s.history.slice(-14) : [];
+    if (!hist.length) {
+        const empty = document.createElement('div');
+        empty.className = 'tf-trend-empty';
+        empty.textContent = safeT('暂无历史数据');
+        trendBars.appendChild(empty);
+    } else {
+        const maxCost = Math.max(1, ...hist.map(h => h.cost || 0));
+        for (const h of hist) {
+            const col = document.createElement('div');
+            col.className = 'tf-trend-col';
+            const bar = document.createElement('div');
+            bar.className = 'tf-trend-bar';
+            bar.style.height = Math.max(6, ((h.cost || 0) / maxCost) * 100) + '%';
+            bar.title = `${h.date}: ${fmtMoney(s, h.cost || 0)} / ${fmtTokens(h.tokens || 0)}`;
+            const val = document.createElement('span');
+            val.className = 'tf-trend-val';
+            val.textContent = h.date.slice(5);
+            col.appendChild(bar);
+            col.appendChild(val);
+            trendBars.appendChild(col);
+        }
+    }
+    trendBlock.appendChild(trendBars);
+    grid.appendChild(trendBlock);
+
+    // ============ v1.1.0：预算 + 上下文监控 ============
+    const monoBlock = document.createElement('div');
+    monoBlock.className = 'tf-mono';
+    const monoGrid = document.createElement('div');
+    monoGrid.className = 'tf-writing-grid';
+
+    // 今日预算进度
+    const dailyCostNow = (s.dailyStats && s.dailyStats.cost) || 0;
+    const dailyLimit = (s.budget && s.budget.dailyLimit) || 0;
+    const dPct = dailyLimit > 0 ? Math.min(100, (dailyCostNow / dailyLimit) * 100) : 0;
+    const dCell = document.createElement('div');
+    dCell.className = 'tf-writing-cell';
+    dCell.innerHTML = `<div class="tf-writing-val">${fmtMoney(s, dailyCostNow)}</div><div class="tf-writing-label">${safeT('今日费用')}</div>`;
+    if (dailyLimit > 0) {
+        const dbar = document.createElement('div');
+        dbar.className = 'tf-budget-bar';
+        const dfill = document.createElement('div');
+        dfill.className = 'tf-budget-fill' + (dPct >= 100 ? ' over' : dPct >= 80 ? ' warn' : '');
+        dfill.style.width = dPct + '%';
+        dbar.appendChild(dfill);
+        dCell.appendChild(dbar);
+        const dmeta = document.createElement('div');
+        dmeta.className = 'tf-writing-hint';
+        dmeta.textContent = `${safeT('日预算')} ${fmtMoney(s, dailyLimit)} · ${Math.round(dPct)}%`;
+        dCell.appendChild(dmeta);
+    }
+    monoGrid.appendChild(dCell);
+
+    // 上下文占用
+    const ctx = contextUsagePercent();
+    const cCell = document.createElement('div');
+    cCell.className = 'tf-writing-cell';
+    cCell.innerHTML = `<div class="tf-writing-val">${Math.round(ctx.pct)}%</div><div class="tf-writing-label">${safeT('上下文占用')}</div>`;
+    const cbar = document.createElement('div');
+    cbar.className = 'tf-budget-bar';
+    const cfill = document.createElement('div');
+    cfill.className = 'tf-budget-fill' + (ctx.pct >= 90 ? ' over' : ctx.pct >= 70 ? ' warn' : '');
+    cfill.style.width = ctx.pct + '%';
+    cbar.appendChild(cfill);
+    cCell.appendChild(cbar);
+    const cmeta = document.createElement('div');
+    cmeta.className = 'tf-writing-hint';
+    cmeta.textContent = `${fmtTokens(ctx.used)} / ${fmtTokens(ctx.limit)}`;
+    cCell.appendChild(cmeta);
+    monoGrid.appendChild(cCell);
+
+    monoBlock.appendChild(monoGrid);
+    grid.appendChild(monoBlock);
 
     // 按模型明细 —— 加入成本占比进度条 + 排名徽标
     const modelKeys = Object.keys(total.models || {}).sort((a, b) =>
@@ -1052,6 +1275,121 @@ function addExtensionSettingsInto(content) {
     btnRow.appendChild(resetAll);
     btnRow.appendChild(resetSession);
     wrap.appendChild(btnRow);
+
+    // ============ v1.1.0 新增配置：预算监控 ============
+    const budgetHead = document.createElement('div');
+    budgetHead.className = 'tf-writing-title';
+    budgetHead.textContent = '💰 ' + safeT('预算监控');
+    wrap.appendChild(budgetHead);
+
+    const mkCheck2 = (key, label) => {
+        const lab = document.createElement('label');
+        lab.className = 'checkbox_label';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !!(s[key]);
+        cb.addEventListener('change', () => {
+            s[key] = cb.checked; saveSettingsDebounced(); updateDashboard();
+        });
+        lab.append(cb);
+        lab.append(document.createTextNode(safeT(label)));
+        return lab;
+    };
+
+    // 预算开关（嵌套路径 s.budget.enabled）
+    const budgetLab = document.createElement('label');
+    budgetLab.className = 'checkbox_label';
+    const budgetCb = document.createElement('input');
+    budgetCb.type = 'checkbox';
+    budgetCb.checked = !!(s.budget && s.budget.enabled);
+    budgetCb.addEventListener('change', () => {
+        s.budget.enabled = budgetCb.checked; saveSettingsDebounced();
+        if (!budgetCb.checked) clearOrbAlert();
+        updateDashboard();
+    });
+    budgetLab.append(budgetCb);
+    budgetLab.append(document.createTextNode(safeT('启用预算预警')));
+    row(span(safeT('预算开关')), budgetLab);
+    row(span(safeT('今日限额 ($/1M)')),
+        makeInput('tf_budget_daily', 'number', s.budget && s.budget.dailyLimit, () => {
+            const v = parseFloat(document.getElementById('tf_budget_daily').value);
+            s.budget.dailyLimit = isNaN(v) ? 0 : v; saveSettingsDebounced(); updateDashboard();
+        }));
+    row(span(safeT('月度限额 ($/1M)')),
+        makeInput('tf_budget_monthly', 'number', s.budget && s.budget.monthlyLimit, () => {
+            const v = parseFloat(document.getElementById('tf_budget_monthly').value);
+            s.budget.monthlyLimit = isNaN(v) ? 0 : v; saveSettingsDebounced(); updateDashboard();
+        }));
+
+    // ============ v1.1.0 新增配置：上下文监控 ============
+    const ctxHead = document.createElement('div');
+    ctxHead.className = 'tf-writing-title';
+    ctxHead.textContent = '🧠 ' + safeT('上下文监控');
+    wrap.appendChild(ctxHead);
+    row(span(safeT('上下文窗口 (tokens)')),
+        makeInput('tf_ctx_size', 'number', s.contextSize, () => {
+            const v = parseInt(document.getElementById('tf_ctx_size').value);
+            if (v > 0) { s.contextSize = v; saveSettingsDebounced(); updateDashboard(); }
+        }));
+
+    // ============ v1.1.0 新增功能：历史归档配置 + 导出/导入 ============
+    const histHead = document.createElement('div');
+    histHead.className = 'tf-writing-title';
+    histHead.textContent = '🗂 ' + safeT('历史归档');
+    wrap.appendChild(histHead);
+
+    const autoArch = mkCheck2('autoArchive', '自动按日归档');
+    row(span(safeT('自动归档')), autoArch);
+    row(span(safeT('保留天数')),
+        makeInput('tf_archive_days', 'number', s.archiveDays, () => {
+            const v = parseInt(document.getElementById('tf_archive_days').value);
+            if (v > 0) { s.archiveDays = v; saveSettingsDebounced(); }
+        }));
+
+    const ioRow = document.createElement('div');
+    ioRow.className = 'tf-btn-row';
+
+    const exportBtn = document.createElement('button');
+    exportBtn.textContent = safeT('导出数据');
+    exportBtn.className = 'menu_button';
+    exportBtn.addEventListener('click', () => {
+        const payload = { version: 1, exportedAt: Date.now(), settings: s };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'tokenflow_backup.json'; a.click();
+        URL.revokeObjectURL(url);
+    });
+    ioRow.appendChild(exportBtn);
+
+    const importBtn = document.createElement('button');
+    importBtn.textContent = safeT('导入数据');
+    importBtn.className = 'menu_button';
+    importBtn.addEventListener('click', () => {
+        const fi = document.createElement('input');
+        fi.type = 'file'; fi.accept = '.json';
+        fi.addEventListener('change', () => {
+            const file = fi.files && fi.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => {
+                try {
+                    const parsed = JSON.parse(reader.result);
+                    if (parsed && parsed.settings) {
+                        Object.assign(extension_settings[MODULE], parsed.settings);
+                        saveSettingsDebounced(); updateDashboard();
+                        alert(safeT('导入成功'));
+                    } else {
+                        alert(safeT('导入失败：格式不合法'));
+                    }
+                } catch (e) { alert(safeT('导入失败') + ': ' + e.message); }
+            };
+            reader.readAsText(file);
+        });
+        fi.click();
+    });
+    ioRow.appendChild(importBtn);
+    wrap.appendChild(ioRow);
 
     content.appendChild(wrap);
 }
