@@ -1110,3 +1110,96 @@
     border-color: color-mix(in srgb, var(--tf-accent, #5eead4) 45%, transparent);
     background: color-mix(in srgb, var(--tf-accent, #5eead4) 14%, transparent);
 }
+
+
+/* ============================================================
+ *  v1.5.0 · RPM（每分钟请求数）实时速率面板
+ * ============================================================ */
+.tf-rpm-panel {
+    margin-top: 4px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--tf-accent, #5eead4) 18%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1a1a2e) 55%, transparent);
+}
+
+.tf-rpm-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tf-rpm-big {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.tf-rpm-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #64748b;
+    display: inline-block;
+    align-self: center;
+    box-shadow: 0 0 0 3px rgba(100,116,139,.2);
+    transition: background 200ms ease, box-shadow 200ms ease;
+}
+.tf-rpm-dot.live {
+    background: var(--tf-accent, #5eead4);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--tf-accent, #5eead4) 25%, transparent), 0 0 12px color-mix(in srgb, var(--tf-accent, #5eead4) 70%, transparent);
+    animation: tfRpmBlink 1.2s ease-in-out infinite;
+}
+@keyframes tfRpmBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .55; }
+}
+.tf-rpm-biglab {
+    font-size: 12px;
+    opacity: .65;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+.tf-rpm-num {
+    font-size: 26px;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--tf-accent, #5eead4), color-mix(in srgb, var(--tf-accent, #5eead4) 55%, #fff));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: .5px;
+    line-height: 1;
+}
+
+.tf-rpm-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    gap: 8px;
+}
+.tf-rpm-meta .tf-writing-cell {
+    background: color-mix(in srgb, var(--tf-accent, #5eead4) 6%, transparent);
+    border-radius: 10px;
+    padding: 8px 10px;
+    text-align: center;
+}
+
+.tf-rpm-bar {
+    height: 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--SmartThemeBorderColor, rgba(128,128,128,.4)) 35%, transparent);
+    overflow: hidden;
+}
+.tf-rpm-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--tf-accent, #5eead4), color-mix(in srgb, var(--tf-accent, #5eead4) 60%, #fff));
+    transition: width 500ms ease;
+    box-shadow: 0 0 10px color-mix(in srgb, var(--tf-accent, #5eead4) 70%, transparent);
+}
+
+.tf-rpm-tip {
+    font-size: 11px;
+    opacity: .55;
+    text-align: right;
+}

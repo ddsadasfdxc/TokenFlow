@@ -88,6 +88,7 @@ const defaultSettings = {
     // ===== v1.4.0：悬浮球增强 =====
     autoRefresh: false,                // 自动刷新
     autoRefreshInterval: 15,           // 自动刷新间隔（秒）
+    rpm: { window: [], peak: 0 },      // 每分钟请求数(RPM)滑动窗口
 };
 
 function getSettings() {
@@ -223,6 +224,7 @@ function recordUsage(model, inTok, outTok, cachedTok, isEstimate, requests = 1) 
         bucket.totalCost = (bucket.totalCost || 0) + cost.usd;
     }
 
+    recordRPM(s, requests);
     recordDailyUsage(s, cost.usd, inTok + outTok + cachedTok, requests, isEstimate);
     checkBudgetAlert(s, cost.usd);
     maybeArchive(s);
@@ -240,6 +242,45 @@ function recordUsage(model, inTok, outTok, cachedTok, isEstimate, requests = 1) 
 function _todayStr(d = new Date()) {
     const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${dd}`;
+}
+
+/* ============================================================
+ *  v1.5.0 · RPM（每分钟请求数）滑动窗口统计
+ *  - window: 最近 60 秒内的请求时间戳队列（环形裁剪）
+ *  - getRPM()   : 实时速率 = 最近 60 秒请求数（等效每分钟）
+ *  - recordRPM(): 压入时间戳，裁剪过期项，更新峰值
+ * ============================================================ */
+const RPM_WINDOW_MS = 60 * 1000;   // 滑动窗口：60 秒
+
+function _normRPM(s) {
+    if (!s.rpm || typeof s.rpm !== 'object') s.rpm = { window: [], peak: 0 };
+    if (!Array.isArray(s.rpm.window)) s.rpm.window = [];
+    if (typeof s.rpm.peak !== 'number' || !isFinite(s.rpm.peak)) s.rpm.peak = 0;
+    return s.rpm;
+}
+
+// 实时 RPM：最近 60 秒内的请求数（滑窗），并做惰性裁剪
+function getRPM(s) {
+    const r = _normRPM(s);
+    const now = Date.now();
+    const cutoff = now - RPM_WINDOW_MS;
+    r.window = r.window.filter(t => t > cutoff);
+    return r.window.length;
+}
+
+// 记录一次请求：压入时间戳，裁剪窗口，更新峰值 & 会话平均
+function recordRPM(s, requests = 1) {
+    if (!requests || requests <= 0) return;
+    const r = _normRPM(s);
+    const now = Date.now();
+    const cutoff = now - RPM_WINDOW_MS;
+    // 批量压入 requests 个时间戳（记录真正的请求次数）
+    for (let i = 0; i < requests && i < 200; i++) r.window.push(now);
+    // 裁剪过期项（保持队列 <= 60s + 200 上限，防止异常膨胀）
+    r.window = r.window.filter(t => t > cutoff).slice(-500);
+    const live = r.window.length;
+    if (live > r.peak) r.peak = live;
+    return live;
 }
 
 // 每日统计：按自然日累积
@@ -807,6 +848,13 @@ function updateDashboard() {
     grid.appendChild(statCard(safeT('累计 Token'), fmtTokens(totalTokens), totalReq + ' ' + safeT('次请求')));
     grid.appendChild(statCard(safeT('会话费用'), fmtMoney(s, sessCost), s.displayCurrency));
     grid.appendChild(statCard(safeT('会话 Token'), fmtTokens(sessTokens), sessReq + ' ' + safeT('次请求')));
+    // ============ v1.5.0：RPM & 请求速率 ============
+    const rpmNow = getRPM(s);
+    const rpmPeak = (s.rpm && s.rpm.peak) || 0;
+    const rpmSessAvg = session.sessionStartedAt ? (sessReq * 60000) / Math.max(1000, Date.now() - (session.sessionStartedAt || Date.now())) : 0;
+    const rpmSessAvgDisp = rpmSessAvg >= 1 ? Math.round(rpmSessAvg) : (rpmSessAvg > 0 ? rpmSessAvg.toFixed(1) : '0');
+    grid.appendChild(statCard(safeT('实时 RPM'), rpmNow, safeT('峰值') + ' ' + rpmPeak));
+    grid.appendChild(statCard(safeT('会话速率'), rpmSessAvgDisp + (rpmSessAvg>=1?'':'') + ' /min', safeT('峰值') + ' ' + rpmPeak + ' rpm'));
 
     // ============ 写作画像：字数 + 消息条数（实时统计当前聊天） ============
     const chatArr = (() => { try { return getContext()?.chat || globalThis.chat || []; } catch { return []; } })();
@@ -949,6 +997,63 @@ function updateDashboard() {
 
     monoBlock.appendChild(monoGrid);
     grid.appendChild(monoBlock);
+    // ============ v1.5.0：RPM 实时速率面板（可视化） ============
+    const rpmBlock = document.createElement('div');
+    rpmBlock.className = 'tf-rpm-panel';
+    const rpmH = document.createElement('div');
+    rpmH.className = 'tf-writing-title';
+    rpmH.textContent = '⚡ ' + safeT('请求速率 (RPM)');
+    rpmBlock.appendChild(rpmH);
+    const rpmInner = document.createElement('div');
+    rpmInner.className = 'tf-rpm-inner';
+    // 大号实时数字 + 指示灯
+    const rpmBig = document.createElement('div');
+    rpmBig.className = 'tf-rpm-big';
+    const dot = document.createElement('span');
+    dot.className = 'tf-rpm-dot' + (rpmNow > 0 ? ' live' : '');
+    const num = document.createElement('span');
+    num.className = 'tf-rpm-num';
+    num.textContent = rpmNow + (safeT('次/min'));
+    const bigLab = document.createElement('span');
+    bigLab.className = 'tf-rpm-biglab';
+    bigLab.textContent = safeT('实时');
+    rpmBig.appendChild(dot); rpmBig.appendChild(bigLab);
+    rpmBig.appendChild(num);
+    rpmInner.appendChild(rpmBig);
+    // 峰值 + 会话均值
+    const rpmMeta = document.createElement('div');
+    rpmMeta.className = 'tf-rpm-meta';
+    const mkMeta = (lab, val) => {
+        const d = document.createElement('div');
+        d.className = 'tf-writing-cell';
+        const v = document.createElement('div');
+        v.className = 'tf-writing-val';
+        v.textContent = val;
+        const l = document.createElement('div');
+        l.className = 'tf-writing-label';
+        l.textContent = lab;
+        d.appendChild(v); d.appendChild(l);
+        return d;
+    };
+    rpmMeta.appendChild(mkMeta(safeT('峰值'), rpmPeak));
+    rpmMeta.appendChild(mkMeta(safeT('会话平均'), rpmSessAvgDisp));
+    rpmMeta.appendChild(mkMeta(safeT('累计请求'), (s.stats.totalRequests||0).toLocaleString()));
+    rpmInner.appendChild(rpmMeta);
+    // 迷你速率条：按峰值归一化展示当前负载
+    const barWrap = document.createElement('div');
+    barWrap.className = 'tf-rpm-bar';
+    const barFill = document.createElement('div');
+    barFill.className = 'tf-rpm-bar-fill';
+    const pct = rpmPeak > 0 ? Math.min(100, (rpmNow / rpmPeak) * 100) : 0;
+    barFill.style.width = (rpmNow > 0 ? Math.max(8, pct) : 0) + '%';
+    barWrap.appendChild(barFill);
+    rpmInner.appendChild(barWrap);
+    const rpmTip = document.createElement('div');
+    rpmTip.className = 'tf-rpm-tip';
+    rpmTip.textContent = safeT('基于 60 秒滑动窗口的实时请求速率');
+    rpmInner.appendChild(rpmTip);
+    rpmBlock.appendChild(rpmInner);
+    grid.appendChild(rpmBlock);
 
     // 按模型明细 —— 加入成本占比进度条 + 排名徽标
     const modelKeys = Object.keys(total.models || {}).sort((a, b) =>
